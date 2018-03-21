@@ -13,9 +13,12 @@ SourceIndex = 0
 TargetIndex = 1
 BatchSize = 100             # 染色体个数
 NumClasses = 1000           # 标签种类
+MaxEpoch = 1000             # 迭代上限
+Reserve = 0.5               # 保留率=父子保留的精英量
 ChromosomesShape = (BatchSize,299,299,3)
 def main():
     global OutDir
+    global MaxEpoch
 
     SourceImg,SourceClass = get_image(SourceIndex)
     TargetImg, TargetClass = get_image(TargetIndex)
@@ -30,22 +33,41 @@ def main():
         Labels = np.repeat(np.expand_dims(one_hot_vec, axis=0),repeats=BatchSize, axis=0)
 
         # 开始进化算法
-        Chromosomes = tf.placeholder(tf.float32,ChromosomesShape)
+        Chromosomes = tf.Variable(np.random.random(ChromosomesShape),dtype=tf.float32)
+        ChromosomesPC = tf.Variable(np.random.random(BatchSize), dtype=tf.float32)
+        ChromosomesPM = tf.Variable(np.random.random(BatchSize), dtype=tf.float32)
 
-        ChromosomesPC = tf.Variable(np.random.random(BatchSize),dtype=tf.float32)
-        ChromosomesPM = tf.Variable(np.random.random(BatchSize),dtype=tf.float32)
+        NewImage = Chromosomes + SourceImg
 
+        # 计算置信度
         Confidenceplaceholder = tf.placeholder(dtype=tf.float32)
         Predictiondsplaceholder = tf.placeholder(dtype=tf.int32)
         Confidence = Confidenceplaceholder
         Prediction = Predictiondsplaceholder
 
+        # 计算适应度
         ChromosomesFitness = -tf.reduce_sum(Labels * tf.log(Confidence), 1)
+        MaxFitness = tf.reduce_max(ChromosomesFitness)
+        SumFitness = tf.reduce_sum(ChromosomesFitness)
+        AvgFitness = SumFitness / BatchSize
+
+        # 选优
+        GoodInds = tf.where(tf.greater_equal(ChromosomesFitness,AvgFitness))
+        GoodChromosomes = tf.gather(Chromosomes,GoodInds)
+        # 先计算突变、交叉概率
+        ChromosomesPC = tf.gather(Chromosomes,)
+        # 如果
+
+
 
         # 获取种群最佳（活着的，不算历史的）
         Pbestinds = tf.where(tf.equal(tf.reduce_max(ChromosomesFitness),ChromosomesFitness))
         Pbestinds = Pbestinds[:,0]
         Pbest = tf.gather(Chromosomes,Pbestinds)
+
+
+    while i in range(MaxEpoch):
+
 
 def get_image(index):
     global InputDir
