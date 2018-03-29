@@ -44,20 +44,20 @@ def main():
         Expectation = tf.Variable(np.random.random([299,299,3]),dtype=tf.float32) # （299，299，3）
         Deviation = tf.Variable(np.random.random([299,299,3]),dtype=tf.float32) # （299，299，3）
 
-        NewImage = Individual + SourceImg
+        NewImage = Individual + InputImg
 
         # 计算置信度
         # Confidenceplaceholder = tf.placeholder(dtype=tf.float32)
         # Predictiondsplaceholder = tf.placeholder(dtype=tf.int32)
         # Confidence = Confidenceplaceholder # （BatchSize，K）
         # Prediction = Predictiondsplaceholder # （BatchSize）
-        Confidence,Prediction = model(sess,Individual)
+        Confidence,Prediction = model(sess,NewImage)
 
         # 计算适应度
         # IndividualFitness = -tf.reduce_sum(Labels * tf.log(Confidence), 1) #（BatchSize）
         # （BatchSize，1）还是（BatchSize） ？ 是（BatchSize）
         # reduction_indices 表示求和方向，并降维
-        IndividualFitness = tf.nn.softmax_cross_entropy_with_logits()
+        IndividualFitness = tf.nn.softmax_cross_entropy_with_logits(logits=Confidence,labels=Labels)
 
 
         # 选取优秀的的前BestNmber的个体
@@ -103,7 +103,8 @@ def main():
                                 initI[w][j][k][l] = norm.rvs(loc=ENP[j][k][l], scale=DNP[j][k][l],size = 1)
 
 
-            ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
+            C,P,I,ENP,DNP,PBF,PB = sess.run([Confidence,Prediction,IndividualFitness,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
+            # ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
             if PBF < GBF:
                 GB = PB
                 GBF = PBF
@@ -149,15 +150,15 @@ def load_image(path):
         img = img[:, :, :3]
     return img
 
-def set_value_4D(matrix,i,j,k,l,val):
-    size1 = int(matrix.get_shape()[0])
-    size2 = int(matrix.get_shape()[1])
-    size3 = int(matrix.get_shape()[2])
-    size4 = int(matrix.get_shape()[3])
-    val_diff = val - matrix[i][j][k][l]
-    diff_matrix = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[i,j,k,l], values=[val_diff], dense_shape=[size1,size2,size3,size4]))
-    matrix.assign_add(diff_matrix)
-    return matrix
+# def set_value_4D(matrix,i,j,k,l,val):
+#     size1 = int(matrix.get_shape()[0])
+#     size2 = int(matrix.get_shape()[1])
+#     size3 = int(matrix.get_shape()[2])
+#     size4 = int(matrix.get_shape()[3])
+#     val_diff = val - matrix[i][j][k][l]
+#     diff_matrix = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[i,j,k,l], values=[val_diff], dense_shape=[size1,size2,size3,size4]))
+#     matrix.assign_add(diff_matrix)
+#     return matrix
 
 # 二维
 # def set_value(matrix, x, y, val):
