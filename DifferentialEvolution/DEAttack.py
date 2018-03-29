@@ -1,13 +1,20 @@
 # 本程序为差分进化算法实现攻击的demo
-import PIL
+# 问题：
+# 1. 原始图片都不能正常识别
+# 2. 生成10^7个随机数，耗时过长
+from PIL import Image
+from inception_v3_imagenet import model, SIZE
 import numpy as np
 import tensorflow as tf
+from utils import *
+import os
+import sys
+import shutil
+
+import PIL
+
 from scipy.stats import norm
 
-from inception_v3_imagenet import model, SIZE
-import os
-import shutil
-from utils import *
 
 InputDir = "adv_samples"
 OutDir = "adv_example/"
@@ -32,11 +39,11 @@ def main():
         shutil.rmtree(OutDir)
     os.makedirs(OutDir)
     one_hot_vec = one_hot(TargetClass, NumClasses)
-    with tf.Session() as sess:
 
+    with tf.Session() as sess:
         # 完成输入
-        InputImg = tf.constant(SourceImg) #（299，299，3）
-        TempImg = tf.expand_dims(InputImg,axis=0)   #（1，299，299，3）
+        InputImg = tf.constant(SourceImg,dtype=tf.float32) #（299，299，3）
+        TempImg = tf.reshape(InputImg,shape=(1,299,299,3))   #（1，299，299，3）
         Labels = np.repeat(np.expand_dims(one_hot_vec, axis=0),repeats=BatchSize, axis=0) # （BatchSize，1000）
 
         # 开始进化算法
@@ -44,20 +51,20 @@ def main():
         Expectation = tf.Variable(np.random.random([299,299,3]),dtype=tf.float32) # （299，299，3）
         Deviation = tf.Variable(np.random.random([299,299,3]),dtype=tf.float32) # （299，299，3）
 
-        NewImage = Individual + InputImg
+        NewImage = Individual + TempImg
 
         # 计算置信度
         # Confidenceplaceholder = tf.placeholder(dtype=tf.float32)
         # Predictiondsplaceholder = tf.placeholder(dtype=tf.int32)
         # Confidence = Confidenceplaceholder # （BatchSize，K）
         # Prediction = Predictiondsplaceholder # （BatchSize）
-        Confidence,Prediction = model(sess,NewImage)
+        Confidence,Prediction = model(sess,NewImage) # TMD 为啥在我的程序里这个model不好使了
 
         # 计算适应度
         # IndividualFitness = -tf.reduce_sum(Labels * tf.log(Confidence), 1) #（BatchSize）
         # （BatchSize，1）还是（BatchSize） ？ 是（BatchSize）
         # reduction_indices 表示求和方向，并降维
-        IndividualFitness = tf.nn.softmax_cross_entropy_with_logits(logits=Confidence,labels=Labels)
+        IndividualFitness = - tf.nn.softmax_cross_entropy_with_logits(logits=Confidence,labels=Labels)
 
 
         # 选取优秀的的前BestNmber的个体
@@ -78,38 +85,39 @@ def main():
         Pbestinds = Pbestinds[:,0]
         Pbest = tf.gather(Individual,Pbestinds)
 
-        GBF = 10000.0
+        GBF = -10000.0
         GB = np.zeros([299,299,3],dtype=float)
 
-        init = tf.initialize_all_variables()
-        sess.run(init)
+        # init = tf.initialize_all_variables()!!!!!!这个会初始化全部的变量，包括其他函数里边的
+        # sess.run(init)
 
         ##debug
         # initI = norm.rvs(loc=0, scale=0.1, size=IndividualShape)
         # C,P,I,N,E,D = sess.run([Confidence,Prediction,Individual,NewImage,Expectation,StdDeviation],feed_dict={Individual:initI})
         ##debug
 
-        initI = np.zeros(IndividualShape,dtype=float)
+        initI = np.zeros(IndividualShape, dtype=float)
         ENP = np.zeros(ImageShape,dtype=float)
-        DNP = ENP+0.1
+        DNP = ENP+0.001
         for i in range(MaxEpoch):
             if i == 0 :
-                initI = norm.rvs(loc=0, scale=0.1, size=IndividualShape)
+                initI = norm.rvs(loc=0, scale=0.01, size=IndividualShape)
             else :
-                for w in range(BatchSize):
-                    for j in range(299):
-                        for k in range(299):
-                            for l in range(3):
-                                initI[w][j][k][l] = norm.rvs(loc=ENP[j][k][l], scale=DNP[j][k][l],size = 1)
+                temp = np.zeros((3,299,299,BatchSize), dtype=float)
+                for j in range(3):
+                    for k in range(299):
+                        for l in range(299):
+                            temp[j][k][l] = norm.rvs(loc=ENP[l][k][j], scale=DNP[l][k][j],size=BatchSize)
+                initI = temp.transpose((3,2,1,0))
 
-
-            C,P,I,ENP,DNP,PBF,PB = sess.run([Confidence,Prediction,IndividualFitness,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
-            # ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
-            if PBF < GBF:
+            # T,C, P= sess.run([TempImg,Confidence, Prediction])
+            # C,P,I,ENP,DNP,PBF,PB = sess.run([Confidence,Prediction,IndividualFitness,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
+            TKF,TKFI,ENP,DNP,PBF,PB = sess.run([TopKFit,TopKFitIndx,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
+            if PBF > GBF:
                 GB = PB
                 GBF = PBF
-            print("Step",i,": ",GBF)
-            if GBF < 1e-5:
+            print("Step",i,": GBF: ",GBF," PBF: ",PBF)
+            if GBF > -1e-3:
                 break
 
 
@@ -170,6 +178,11 @@ def load_image(path):
 #     diff_matrix = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[x, y], values=[val_diff], dense_shape=[w, h]))
 #     # 用 Variable.assign_add 将两个矩阵相加
 #     matrix.assign_add(diff_matrix)
+
+
+def get_available_gpus():
+    local_device_protos = device_lib.list_local_devices()
+    return [x.name for x in local_device_protos if x.device_type == 'GPU']
 
 
 if __name__ == '__main__':
