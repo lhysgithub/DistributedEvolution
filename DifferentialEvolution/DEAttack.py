@@ -2,6 +2,8 @@
 import PIL
 import numpy as np
 import tensorflow as tf
+from scipy.stats import norm
+
 from inception_v3_imagenet import model, SIZE
 import os
 import shutil
@@ -17,6 +19,8 @@ MaxEpoch = 1000             # 迭代上限
 Reserve = 0.5               # 保留率 = 父子保留的精英量 / BestNumber
 BestNmber = int(BatchSize*Reserve) # 优秀样本数量
 IndividualShape = (BatchSize,299,299,3)
+Directions = 299*299*3
+ImageShape = (299,299,3)
 def main():
     global OutDir
     global MaxEpoch
@@ -36,7 +40,7 @@ def main():
         Labels = np.repeat(np.expand_dims(one_hot_vec, axis=0),repeats=BatchSize, axis=0) # （BatchSize，1000）
 
         # 开始进化算法
-        Individual = tf.Variable(np.random.random(IndividualShape),dtype=tf.float32) # （BatchSize，299，299，3）
+        Individual = tf.placeholder(shape=IndividualShape,dtype=tf.float32) # （BatchSize，299，299，3）
         Expectation = tf.Variable(np.random.random([299,299,3]),dtype=tf.float32) # （299，299，3）
         Deviation = tf.Variable(np.random.random([299,299,3]),dtype=tf.float32) # （299，299，3）
 
@@ -50,9 +54,10 @@ def main():
         Confidence,Prediction = model(sess,Individual)
 
         # 计算适应度
-        IndividualFitness = -tf.reduce_sum(Labels * tf.log(Confidence), 1) #（BatchSize）
+        # IndividualFitness = -tf.reduce_sum(Labels * tf.log(Confidence), 1) #（BatchSize）
         # （BatchSize，1）还是（BatchSize） ？ 是（BatchSize）
         # reduction_indices 表示求和方向，并降维
+        IndividualFitness = tf.nn.softmax_cross_entropy_with_logits()
 
 
         # 选取优秀的的前BestNmber的个体
@@ -67,16 +72,6 @@ def main():
         Deviation /= BestNmber
         StdDeviation = tf.sqrt(Deviation)
 
-        temp = tf.Variable(np.zeros(IndividualShape),dtype=tf.float32) # （BatchSize，299，299，3）
-        # 利用新的期望与方差生成个体
-        # for i in range(BatchSize):
-        #     for j in range(299):
-        #         for k in range(299):
-        #             for l in range(3):
-        #                 temp = tf.random_normal([1],mean=Expectation[j][k][l],stddev=StdDeviation[j][k][l],dtype=tf.float32)
-        #                 Individual = set_value_4D(Individual,i,j,k,l,temp)
-
-
         # 获取种群最佳（活着的，不算历史的）
         PbestFitness = tf.reduce_max(IndividualFitness)
         Pbestinds = tf.where(tf.equal(PbestFitness,IndividualFitness))
@@ -86,10 +81,29 @@ def main():
         GBF = 10000.0
         GB = np.zeros([299,299,3],dtype=float)
 
-        T,E,D = sess.run([temp,Expectation,StdDeviation])
+        init = tf.initialize_all_variables()
+        sess.run(init)
 
-        while i in range(MaxEpoch):
-            PBF,PB = sess.run([PbestFitness,Pbest])
+        ##debug
+        # initI = norm.rvs(loc=0, scale=0.1, size=IndividualShape)
+        # C,P,I,N,E,D = sess.run([Confidence,Prediction,Individual,NewImage,Expectation,StdDeviation],feed_dict={Individual:initI})
+        ##debug
+
+        initI = np.zeros(IndividualShape,dtype=float)
+        ENP = np.zeros(ImageShape,dtype=float)
+        DNP = ENP+0.1
+        for i in range(MaxEpoch):
+            if i == 0 :
+                initI = norm.rvs(loc=0, scale=0.1, size=IndividualShape)
+            else :
+                for w in range(BatchSize):
+                    for j in range(299):
+                        for k in range(299):
+                            for l in range(3):
+                                initI[w][j][k][l] = norm.rvs(loc=ENP[j][k][l], scale=DNP[j][k][l],size = 1)
+
+
+            ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
             if PBF < GBF:
                 GB = PB
                 GBF = PBF
@@ -159,3 +173,12 @@ def set_value_4D(matrix,i,j,k,l,val):
 
 if __name__ == '__main__':
     main()
+
+# temp = tf.Variable(np.zeros(IndividualShape),dtype=tf.float32) # （BatchSize，299，299，3）
+# 利用新的期望与方差生成个体
+# for i in range(BatchSize):
+#     for j in range(299):
+#         for k in range(299):
+#             for l in range(3):
+#                 temp = tf.random_normal([1],mean=Expectation[j][k][l],stddev=StdDeviation[j][k][l],dtype=tf.float32)
+#                 Individual = set_value_4D(Individual,i,j,k,l,temp)
