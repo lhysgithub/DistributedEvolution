@@ -2,21 +2,21 @@
 # 问题：
 # 1. 原始图片都不能正常识别
 # 2. 生成10^7个随机数，耗时过长
+import PIL
 from PIL import Image
 from inception_v3_imagenet import model, SIZE
+import matplotlib.pyplot as plt
+from utils import *
+from scipy.stats import norm
+from imagenet_labels import label_to_name
+
 import numpy as np
 import tensorflow as tf
-from utils import *
 import os
 import sys
 import shutil
 
-import PIL
-
-from scipy.stats import norm
-
-
-InputDir = "adv_samples"
+InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
 TargetIndex = 1
@@ -28,9 +28,13 @@ BestNmber = int(BatchSize*Reserve) # 优秀样本数量
 IndividualShape = (BatchSize,299,299,3)
 Directions = 299*299*3
 ImageShape = (299,299,3)
+SourceClass = 0
+TargetClass = 0
 def main():
     global OutDir
     global MaxEpoch
+    global SourceClass
+    global TargetClass
 
     SourceImg,SourceClass = get_image(SourceIndex)
     TargetImg, TargetClass = get_image(TargetIndex)
@@ -88,8 +92,46 @@ def main():
         GBF = -10000.0
         GB = np.zeros([299,299,3],dtype=float)
 
+
+        # ########################################计算输出结果
+        TestImge = tf.placeholder(shape=ImageShape,dtype=tf.float32) #（299，299，3）
+        TestImgeEX = tf.reshape(TestImge, shape=(1, 299, 299, 3))  # （1，299，299，3）
+        TestC, TestP = model(sess, TestImgeEX)  # TMD 为啥在我的程序里这个model不好使了
+
+        def render_frame(sess, image, save_index):
+            image = np.reshape(image,(299,299,3))+SourceImg
+            # actually draw the figure
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 8))
+            # image
+            ax1.imshow(image)
+            fig.sca(ax1)
+            plt.xticks([])
+            plt.yticks([])
+            # classifications
+            probs = softmax(sess.run(TestC, {TestImge: image})[0])
+            topk = probs.argsort()[-5:][::-1]
+            topprobs = probs[topk]
+            barlist = ax2.bar(range(5), topprobs)
+            for i, v in enumerate(topk):
+                if v == SourceClass:
+                    barlist[i].set_color('g')
+                if v == TargetClass:
+                    barlist[i].set_color('r')
+            plt.sca(ax2)
+            plt.ylim([0, 1.1])
+            plt.xticks(range(5), [label_to_name(i)[:15] for i in topk], rotation='vertical')
+            fig.subplots_adjust(bottom=0.2)
+
+            path = os.path.join(OutDir, 'frame%06d.png' % save_index)
+            if os.path.exists(path):
+                os.remove(path)
+            plt.savefig(path)
+            plt.close()
+        # #################################################3计算输出结果
+
         # init = tf.initialize_all_variables()!!!!!!这个会初始化全部的变量，包括其他函数里边的
         # sess.run(init)
+
 
         ##debug
         # initI = norm.rvs(loc=0, scale=0.1, size=IndividualShape)
@@ -117,6 +159,7 @@ def main():
                 GB = PB
                 GBF = PBF
             print("Step",i,": GBF: ",GBF," PBF: ",PBF)
+            render_frame(sess,GB,i)
             if GBF > -1e-3:
                 break
 
@@ -178,12 +221,6 @@ def load_image(path):
 #     diff_matrix = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[x, y], values=[val_diff], dense_shape=[w, h]))
 #     # 用 Variable.assign_add 将两个矩阵相加
 #     matrix.assign_add(diff_matrix)
-
-
-def get_available_gpus():
-    local_device_protos = device_lib.list_local_devices()
-    return [x.name for x in local_device_protos if x.device_type == 'GPU']
-
 
 if __name__ == '__main__':
     main()
