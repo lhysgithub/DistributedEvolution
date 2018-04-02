@@ -2,6 +2,7 @@
 # 问题：
 # 1. 原始图片都不能正常识别
 # 2. 生成10^7个随机数，耗时过长
+# in this version, we meet some trouble
 import PIL
 from PIL import Image
 from inception_v3_imagenet import model, SIZE
@@ -15,21 +16,23 @@ import tensorflow as tf
 import os
 import sys
 import shutil
+import time
 
 InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
 TargetIndex = 1
-BatchSize = 100             # 染色体个数 / 个体个数
+BatchSize = 200             # 染色体个数 / 个体个数
 NumClasses = 1000           # 标签种类
 MaxEpoch = 1000             # 迭代上限
-Reserve = 0.5               # 保留率 = 父子保留的精英量 / BestNumber
+Reserve = 0.25              # 保留率 = 父子保留的精英量 / BestNumber
 BestNmber = int(BatchSize*Reserve) # 优秀样本数量
 IndividualShape = (BatchSize,299,299,3)
 Directions = 299*299*3
 ImageShape = (299,299,3)
 SourceClass = 0
 TargetClass = 0
+Sigma = 2
 def main():
     global OutDir
     global MaxEpoch
@@ -38,6 +41,9 @@ def main():
 
     SourceImg,SourceClass = get_image(SourceIndex)
     TargetImg, TargetClass = get_image(TargetIndex)
+
+    Upper = 1.0 - SourceImg
+    Downer = 0.0 - SourceImg
 
     if os.path.exists(OutDir):
         shutil.rmtree(OutDir)
@@ -64,11 +70,15 @@ def main():
         # Prediction = Predictiondsplaceholder # （BatchSize）
         Confidence,Prediction = model(sess,NewImage) # TMD 为啥在我的程序里这个model不好使了
 
+        # TOPK局部信息
+
+
         # 计算适应度
         # IndividualFitness = -tf.reduce_sum(Labels * tf.log(Confidence), 1) #（BatchSize）
         # （BatchSize，1）还是（BatchSize） ？ 是（BatchSize）
         # reduction_indices 表示求和方向，并降维
-        IndividualFitness = - tf.nn.softmax_cross_entropy_with_logits(logits=Confidence,labels=Labels)
+        L2Distance = tf.sqrt(tf.reduce_sum(tf.square(Individual),axis=(1,2,3)))
+        IndividualFitness = - (Sigma*tf.nn.softmax_cross_entropy_with_logits(logits=Confidence,labels=Labels) + L2Distance)
 
 
         # 选取优秀的的前BestNmber的个体
@@ -89,7 +99,7 @@ def main():
         Pbestinds = Pbestinds[:,0]
         Pbest = tf.gather(Individual,Pbestinds)
 
-        GBF = -10000.0
+        GBF = -1000000.0
         GB = np.zeros([299,299,3],dtype=float)
 
 
@@ -99,7 +109,11 @@ def main():
         TestC, TestP = model(sess, TestImgeEX)  # TMD 为啥在我的程序里这个model不好使了
 
         def render_frame(sess, image, save_index):
+            # testmax = np.max(image)
+            # testmin = np.min(image)
             image = np.reshape(image,(299,299,3))+SourceImg
+            # testmax = np.max(image)
+            # testmin = np.min(image)
             # actually draw the figure
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 8))
             # image
@@ -141,9 +155,14 @@ def main():
         initI = np.zeros(IndividualShape, dtype=float)
         ENP = np.zeros(ImageShape,dtype=float)
         DNP = ENP+0.001
+        # GENP = np.zeros(ImageShape, dtype=float)
+        # GDNP = ENP + 0.001
+        LogFile = open(os.path.join(OutDir, 'log.txt'), 'w+')
         for i in range(MaxEpoch):
+            Start = time.time()
+
             if i == 0 :
-                initI = norm.rvs(loc=0, scale=0.01, size=IndividualShape)
+                initI = norm.rvs(loc=0, scale=0.05, size=IndividualShape)
             else :
                 temp = np.zeros((3,299,299,BatchSize), dtype=float)
                 for j in range(3):
@@ -154,12 +173,24 @@ def main():
 
             # T,C, P= sess.run([TempImg,Confidence, Prediction])
             # C,P,I,ENP,DNP,PBF,PB = sess.run([Confidence,Prediction,IndividualFitness,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
-            TKF,TKFI,ENP,DNP,PBF,PB = sess.run([TopKFit,TopKFitIndx,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
+            # we need updata E and D to updata I
+            # 我们需要更新ED来更新I
+            # 我们发现使用PBEST更新下一代比使用GBEST更新下一代更加具有随机性。
+            initI = np.clip(initI,Downer,Upper)
+            # testmax = np.max(initI)
+            # testmin = np.min(initI)
+            ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
             if PBF > GBF:
                 GB = PB
                 GBF = PBF
-            print("Step",i,": GBF: ",GBF," PBF: ",PBF)
-            render_frame(sess,GB,i)
+                # GENP = ENP
+                # GDNP = DNP
+            render_frame(sess, GB, i)
+            End = time.time()
+            LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f" %(i,GBF,PBF,End-Start)
+            LogFile.write(LogText+'\n')
+            print(LogText)
+
             if GBF > -1e-3:
                 break
 
