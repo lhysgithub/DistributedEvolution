@@ -35,7 +35,7 @@ SourceClass = 0
 TargetClass = 0
 Sigma = 1
 TopK = 5
-Domin = 0.5
+Domin = 0.75
 def main():
     global OutDir
     global MaxEpoch
@@ -114,8 +114,8 @@ def main():
         # IndividualFitness = -tf.reduce_sum(Labels * tf.log(Confidence), 1) #（INumber）
         # （INumber，1）还是（INumber） ？ 是（INumber）
         # reduction_indices 表示求和方向，并降维
-        # L2Distance = tf.sqrt(tf.reduce_sum(tf.square(NewImage - SourceImg),axis=(1,2,3)))
-        IndividualFitness = - (Sigma*tf.nn.softmax_cross_entropy_with_logits(logits=logit,labels=Labels))
+        L2Distance = tf.sqrt(tf.reduce_sum(tf.square(NewImage - SourceImg),axis=(1,2,3)))
+        IndividualFitness = - (Sigma*tf.nn.softmax_cross_entropy_with_logits(logits=logit,labels=Labels)+ L2Distance)
         # IndividualFitness = - (Sigma*(-tf.reduce_sum(Labels * tf.log(Confidence), 1))) # （INumber）
 
 
@@ -193,7 +193,7 @@ def main():
 
         initI = np.zeros(IndividualShape, dtype=float)
         ENP = np.zeros(ImageShape,dtype=float)
-        DNP = ENP+0.1
+        DNP = ENP+0.2
         # GENP = np.zeros(ImageShape, dtype=float)
         # GDNP = ENP + 0.001
         LogFile = open(os.path.join(OutDir, 'log.txt'), 'w+')
@@ -238,6 +238,14 @@ def main():
                     DNP = np.sqrt(DNP)
 
                 if i == 0 and count < 2:
+                    for j in range(BatchSize):
+                        topind = CP[j].argsort()[-TopK:][::-1]
+                        sum = 0.0
+                        for l in topind:
+                            sum += CP[j][l]
+                        for l in range(1000):
+                            if l not in topind:
+                                CP[j][l]=(1-sum)/995
                     CPT = CP.transpose()
                     RNumber = int(BatchSize*Reserve)
                     GoodInds = CPT[TargetClass].argsort()[-RNumber:][::-1]
