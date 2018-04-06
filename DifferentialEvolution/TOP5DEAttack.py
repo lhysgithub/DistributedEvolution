@@ -36,11 +36,13 @@ TargetClass = 0
 Sigma = 1
 TopK = 5
 Domin = 0.75
+StartStdDeviation = 0.05
 def main():
     global OutDir
     global MaxEpoch
     global SourceClass
     global TargetClass
+    global StartStdDeviation
 
     SourceImg,SourceClass = get_image(SourceIndex)
     TargetImg, TargetClass = get_image(TargetIndex)
@@ -141,6 +143,9 @@ def main():
         Pbest = tf.gather(Individual,Pbestinds)
 
         GBF = -1000000.0
+        PBF = GBF
+        LastPBF = PBF
+
         GB = np.zeros([299,299,3],dtype=float)
 
 
@@ -193,7 +198,7 @@ def main():
 
         initI = np.zeros(IndividualShape, dtype=float)
         ENP = np.zeros(ImageShape,dtype=float)
-        DNP = ENP+0.2
+        DNP = ENP+StartStdDeviation
         # GENP = np.zeros(ImageShape, dtype=float)
         # GDNP = ENP + 0.001
         LogFile = open(os.path.join(OutDir, 'log.txt'), 'w+')
@@ -203,6 +208,7 @@ def main():
 
             # 生成
             count = 0
+            Times = 0
             while count != INumber:
                 # 制造
 
@@ -223,7 +229,7 @@ def main():
                         count += 1
                         if count == INumber:
                             break
-                print("count: ", count)
+                print("count: ", count," StartStdDeviation: ",StartStdDeviation)
 
                 if i == 0 and count > 1:
                     tempI = initI[0:count]
@@ -238,29 +244,35 @@ def main():
                     DNP = np.sqrt(DNP)
 
                 if i == 0 and count < 2:
-                    for j in range(BatchSize):
-                        topind = CP[j].argsort()[-TopK:][::-1]
-                        sum = 0.0
-                        for l in topind:
-                            sum += CP[j][l]
-                        for l in range(1000):
-                            if l not in topind:
-                                CP[j][l]=(1-sum)/995
-                    CPT = CP.transpose()
-                    RNumber = int(BatchSize*Reserve)
-                    GoodInds = CPT[TargetClass].argsort()[-RNumber:][::-1]
-                    ENP = np.zeros(ImageShape, dtype=float)
-                    DNP = np.zeros(ImageShape, dtype=float)
-                    tempcount =0
-                    for j in GoodInds:
-                        ENP += 0.5**(tempcount+1)*temp[j]
-                        tempcount += 1
+                    # for j in range(BatchSize):
+                    #     topind = CP[j].argsort()[-TopK:][::-1]
+                    #     sum = 0.0
+                    #     for l in topind:
+                    #         sum += CP[j][l]
+                    #     for l in range(1000):
+                    #         if l not in topind:
+                    #             CP[j][l]=(1-sum)/995
+                    # CPT = CP.transpose()
+                    # RNumber = int(BatchSize*Reserve)
+                    # GoodInds = CPT[TargetClass].argsort()[-RNumber:][::-1]
+                    # ENP = np.zeros(ImageShape, dtype=float)
+                    # DNP = np.zeros(ImageShape, dtype=float)
+                    # tempcount =0
+                    # for j in GoodInds:
+                    #     ENP += 0.5**(tempcount+1)*temp[j]
+                    #     tempcount += 1
+                    #
+                    # tempcount = 0
+                    # for j in GoodInds:
+                    #     DNP += 0.5**(tempcount+1)*np.square(temp[j]-ENP)
+                    #     tempcount += 1
+                    # DNP = np.sqrt(DNP)
+                    Times += 1
+                    if Times == 5 :
+                        StartStdDeviation += 0.01
+                        DNP = ENP + StartStdDeviation
+                        Times = 0
 
-                    tempcount = 0
-                    for j in GoodInds:
-                        DNP += 0.5**(tempcount+1)*np.square(temp[j]-ENP)
-                        tempcount += 1
-                    DNP = np.sqrt(DNP)
 
 
 
@@ -289,6 +301,7 @@ def main():
             # # 梯度消失 构建新的模型
 
             # ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual: initI,Confidenceplaceholder:logitnp,Predictiondsplaceholder:prednp})
+            LastPBF = PBF
             ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual: initI})
             if PBF > GBF:
                 GB = PB
@@ -297,9 +310,14 @@ def main():
                 # GDNP = DNP
             render_frame(sess, GB, i)
             End = time.time()
+            if abs(LastPBF - PBF) < 0.01:
+                DNP = DNP + 0.05
             LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f" %(i,GBF,PBF,End-Start)
-            LogFile.write(LogText+'\n')
+            testext = "\n AvgE: {} \nAvgD: {}".format(ENP,DNP)
+            LogFile.write(LogText+testext+'\n')
             print(LogText)
+            # print("AvgE: ",ENP)
+            # print("AvgD: ",DNP)
 
             if GBF > -1e-3:
                 break
