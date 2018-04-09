@@ -37,7 +37,7 @@ Sigma = 1
 TopK = 5
 Domin = 0.75
 StartStdDeviation = 0.1
-VectorWeight = 0.05
+VectorWeight = 0.0001
 def main():
     global OutDir
     global MaxEpoch
@@ -232,7 +232,7 @@ def main():
                             break
                 print("count: ", count," StartStdDeviation: ",StartStdDeviation)
 
-                if i == 0 and count > 2:
+                if i == 0 and count > 4:
                     tempI = initI[0:count]
                     ENP = np.zeros(ImageShape, dtype=float)
                     DNP = np.zeros(ImageShape, dtype=float)
@@ -244,9 +244,9 @@ def main():
                     DNP /= count
                     DNP = np.sqrt(DNP)
 
-                if i == 0 and count < 3:
+                if i == 0 and count < 5:
                     Times += 1
-                    if Times == 5 :
+                    if Times == 1 :
                         StartStdDeviation += 0.01
                         DNP = ENP + StartStdDeviation
                         Times = 0
@@ -271,7 +271,14 @@ def main():
                 GBF = PBF
                 # GENP = ENP
                 # GDNP = DNP
-            render_frame(sess, GB, i)
+
+            if GB.shape[0] > 1:
+                print("Completed!")
+                render_frame(sess, GB[0], i)
+                break
+            else :
+                render_frame(sess, GB, i)
+
             End = time.time()
             if abs(LastPBF - PBF) < 0.01:
                 DNP += VectorWeight
