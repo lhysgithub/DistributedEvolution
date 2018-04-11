@@ -18,6 +18,9 @@ import sys
 import shutil
 import time
 
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+
 InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
@@ -37,7 +40,8 @@ Sigma = 1
 TopK = 5
 Domin = 0.75
 StartStdDeviation = 0.1
-VectorWeight = 0.0001
+VectorWeight = 0.0125
+Convergence = 0.01
 def main():
     global OutDir
     global MaxEpoch
@@ -246,7 +250,7 @@ def main():
 
                 if i == 0 and count < 5:
                     Times += 1
-                    if Times == 1 :
+                    if Times == 5 :
                         StartStdDeviation += 0.01
                         DNP = ENP + StartStdDeviation
                         Times = 0
@@ -273,21 +277,20 @@ def main():
                 # GDNP = DNP
 
             if GB.shape[0] > 1:
-                print("Completed!")
-                render_frame(sess, GB[0], i)
-                break
-            else :
-                render_frame(sess, GB, i)
+                GB = GB[0]
+                DNP += VectorWeight*10
+                ENP += (SourceImg - (StartImg + ENP)) * VectorWeight*10
+            render_frame(sess, GB, i)
 
             End = time.time()
-            if abs(LastPBF - PBF) < 0.01:
+            if abs(LastPBF - PBF) < Convergence:
                 DNP += VectorWeight
                 ENP += (SourceImg-(StartImg+ENP))*VectorWeight
 
             PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SourceImg), axis=(1, 2, 3)))
             LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f GBL2Distance: %.4f" %(i,GBF,PBF,End-Start,PBL2Distance)
-            testext = "\n AvgE: {} \nAvgD: {}".format(ENP,DNP)
-            LogFile.write(LogText+testext+'\n')
+            # testext = "\n AvgE: {} \nAvgD: {}".format(ENP,DNP)
+            LogFile.write(LogText+'\n')
             print(LogText)
             # print("AvgE: ",ENP)
             # print("AvgD: ",DNP)
