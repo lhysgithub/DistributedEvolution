@@ -39,9 +39,9 @@ TargetClass = 0
 Sigma = 1
 TopK = 5
 Domin = 0.75
-StartStdDeviation = 0.1
+StartStdDeviation = 0.13
 VectorWeight = 0.0125
-Convergence = 0.01
+Convergence = 0.0125
 def main():
     global OutDir
     global MaxEpoch
@@ -236,7 +236,7 @@ def main():
                             break
                 print("count: ", count," StartStdDeviation: ",StartStdDeviation)
 
-                if i == 0 and count > 4:
+                if i == 0 and count > 1:
                     tempI = initI[0:count]
                     ENP = np.zeros(ImageShape, dtype=float)
                     DNP = np.zeros(ImageShape, dtype=float)
@@ -248,7 +248,7 @@ def main():
                     DNP /= count
                     DNP = np.sqrt(DNP)
 
-                if i == 0 and count < 5:
+                if i == 0 and count < 2:
                     Times += 1
                     if Times == 5 :
                         StartStdDeviation += 0.01
