@@ -25,7 +25,7 @@ InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
 TargetIndex = 1
-INumber = 200               # 染色体个数 / 个体个数
+INumber = 100               # 染色体个数 / 个体个数
 BatchSize = 400             # 寻找可用个体时用的批量上限
 NumClasses = 1000           # 标签种类
 MaxEpoch = 1000             # 迭代上限
@@ -39,15 +39,17 @@ TargetClass = 0
 Sigma = 1
 TopK = 5
 Domin = 0.75
-StartStdDeviation = 0.13
-VectorWeight = 0.0125
-Convergence = 0.0125
+StartStdDeviation = 0.1
+VectorWeight = 0.005
+Convergence = 0.01
+StartNumber = 2
 def main():
     global OutDir
     global MaxEpoch
     global SourceClass
     global TargetClass
     global StartStdDeviation
+    global BatchSize
 
     SourceImg,SourceClass = get_image(SourceIndex)
     TargetImg, TargetClass = get_image(TargetIndex)
@@ -216,6 +218,8 @@ def main():
             Times = 0
             while count != INumber:
                 # 制造
+                if i > 5 :
+                    BatchSize = INumber
 
                 temp = np.zeros((3, 299, 299, BatchSize), dtype=float)
                 for j in range(3):
@@ -224,6 +228,9 @@ def main():
                             temp[j][k][l] = norm.rvs(loc=ENP[l][k][j], scale=DNP[l][k][j], size=BatchSize)
                 temp = temp.transpose((3, 2, 1, 0))
                 temp = np.clip(temp, Downer, Upper)
+                if i > 5:
+                    initI = temp
+                    break
                 testimage = temp + np.reshape(StartImg,(1,299,299,3))
                 CP, PP = sess.run([GenC,GenP],{GenI:testimage})
                 CP = np.reshape(CP, (BatchSize, 1000))
@@ -236,7 +243,7 @@ def main():
                             break
                 print("count: ", count," StartStdDeviation: ",StartStdDeviation)
 
-                if i == 0 and count > 1:
+                if i == 0 and count > StartNumber-1:
                     tempI = initI[0:count]
                     ENP = np.zeros(ImageShape, dtype=float)
                     DNP = np.zeros(ImageShape, dtype=float)
@@ -248,15 +255,12 @@ def main():
                     DNP /= count
                     DNP = np.sqrt(DNP)
 
-                if i == 0 and count < 2:
+                if i == 0 and count < StartNumber:
                     Times += 1
-                    if Times == 5 :
+                    if Times == 10 :
                         StartStdDeviation += 0.01
                         DNP = ENP + StartStdDeviation
                         Times = 0
-
-
-
 
             # T,C, P= sess.run([TempImg,Confidence, Prediction])
             # C,P,I,ENP,DNP,PBF,PB = sess.run([Confidence,Prediction,IndividualFitness,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
@@ -280,12 +284,17 @@ def main():
                 GB = GB[0]
                 DNP += VectorWeight*10
                 ENP += (SourceImg - (StartImg + ENP)) * VectorWeight*10
+                print("GBConvergence")
+
+            if PB.shape[0] > 1:
+                PB = PB[0]
             render_frame(sess, GB, i)
 
             End = time.time()
             if abs(LastPBF - PBF) < Convergence:
                 DNP += VectorWeight
                 ENP += (SourceImg-(StartImg+ENP))*VectorWeight
+                print("Close up")
 
             PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SourceImg), axis=(1, 2, 3)))
             LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f GBL2Distance: %.4f" %(i,GBF,PBF,End-Start,PBL2Distance)
@@ -297,8 +306,6 @@ def main():
 
             if GBF > -1e-3:
                 break
-
-
 
 def get_image(index):
     global InputDir
@@ -336,35 +343,6 @@ def load_image(path):
         img = img[:, :, :3]
     return img
 
-# def set_value_4D(matrix,i,j,k,l,val):
-#     size1 = int(matrix.get_shape()[0])
-#     size2 = int(matrix.get_shape()[1])
-#     size3 = int(matrix.get_shape()[2])
-#     size4 = int(matrix.get_shape()[3])
-#     val_diff = val - matrix[i][j][k][l]
-#     diff_matrix = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[i,j,k,l], values=[val_diff], dense_shape=[size1,size2,size3,size4]))
-#     matrix.assign_add(diff_matrix)
-#     return matrix
-
-# 二维
-# def set_value(matrix, x, y, val):
-#     # 得到张量的宽和高，即第一维和第二维的Size
-#     w = int(matrix.get_shape()[0])
-#     h = int(matrix.get_shape()[1])
-#     # 构造一个只有目标位置有值的稀疏矩阵，其值为目标值于原始值的差
-#     val_diff = val - matrix[x][y]
-#     diff_matrix = tf.sparse_tensor_to_dense(tf.SparseTensor(indices=[x, y], values=[val_diff], dense_shape=[w, h]))
-#     # 用 Variable.assign_add 将两个矩阵相加
-#     matrix.assign_add(diff_matrix)
 
 if __name__ == '__main__':
     main()
-
-# temp = tf.Variable(np.zeros(IndividualShape),dtype=tf.float32) # （INumber，299，299，3）
-# 利用新的期望与方差生成个体
-# for i in range(INumber):
-#     for j in range(299):
-#         for k in range(299):
-#             for l in range(3):
-#                 temp = tf.random_normal([1],mean=Expectation[j][k][l],stddev=StdDeviation[j][k][l],dtype=tf.float32)
-#                 Individual = set_value_4D(Individual,i,j,k,l,temp)
