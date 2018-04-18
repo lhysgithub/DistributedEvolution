@@ -40,6 +40,8 @@ Sigma = 1
 TopK = 5
 Domin = 0.75
 StartStdDeviation = 0.1
+EVUper = 0.1
+EVDown = 0.0001
 CloseEVectorWeight = 0.1
 CloseDVectorWeight = 0.01
 Convergence = 0.01
@@ -193,6 +195,8 @@ def main():
         initCp = np.zeros((INumber,1000),dtype = float)
         ENP = np.zeros(ImageShape,dtype=float)
         DNP = ENP+StartStdDeviation
+        LastENP = ENP
+        LastDNP = DNP
         # GENP = np.zeros(ImageShape, dtype=float)
         # GDNP = ENP + 0.001
         LogFile = open(os.path.join(OutDir, 'log.txt'), 'w+')
@@ -247,31 +251,33 @@ def main():
                         DNP = ENP + StartStdDeviation
                         Times = 0
 
+                if i>10 and count < INumber/25 :
+                    DNP = LastDNP
+                    ENP = LastENP
+
                 if cycletimes == 0:
-                    if i > 10 and count < INumber:
+                    if i > 10 and count < INumber/25:
                         UnVaildExist = 1
-                    elif i > 10 and count >= INumber:
+                    elif i > 10 and count >= INumber/25:
                         UnVaildExist = 0
                 cycletimes += 1
 
-
-            # T,C, P= sess.run([TempImg,Confidence, Prediction])
-            # C,P,I,ENP,DNP,PBF,PB = sess.run([Confidence,Prediction,IndividualFitness,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
-            # we need updata E and D to updata I
-            # 我们需要更新ED来更新I
-            # 我们发现使用PBEST更新下一代比使用GBEST更新下一代更加具有随机性。
             initI = np.clip(initI,Downer,Upper)
 
             LastPBF = PBF
+
             ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual: initI,logit:initCp})
             if PBF > GBF:
                 GB = PB
                 GBF = PBF
 
+            LastDNP = DNP
+            LastENP = ENP
+
             if GB.shape[0] > 1:
                 GB = GB[0]
-                DNP += CloseDVectorWeight*10
-                ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight*10
+                DNP += CloseDVectorWeight
+                ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
                 print("GBConvergence")
 
             if PB.shape[0] > 1:
@@ -281,16 +287,22 @@ def main():
 
             End = time.time()
             PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SourceImg), axis=(1, 2, 3)))
-            # if i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
-                # CloseDVectorWeight *= 2
-                # CloseEVectorWeight *= 2
-                # DNP += CloseDVectorWeight
-                # ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
-                # print("Shaked")
-            if UnVaildExist == 1 and PBL2Distance < 20:
+
+            LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f PBL2Distance: %.4f" % (
+            i, GBF, PBF, End - Start, PBL2Distance)
+
+            if UnVaildExist == 1 :#出现无效数据
                 # CloseDVectorWeight /= 2
                 CloseEVectorWeight /= 2
+                # DNP = LastDNP + CloseDVectorWeight
+                # ENP = LastENP + (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
                 print("UnValidExist")
+            elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
+                # CloseDVectorWeight *= 2
+                CloseEVectorWeight += 0.01
+                # DNP += CloseDVectorWeight
+                # ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
+                print("Shaked")
 
             if PBF - LastPBF < Convergence and LastPBF < PBF:
                 DNP += CloseDVectorWeight
@@ -298,12 +310,13 @@ def main():
                 print("Close up")
 
 
-            LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f GBL2Distance: %.4f" %(i,GBF,PBF,End-Start,PBL2Distance)
-
+            if GBF > -13:
+                np.save(os.path.join(OutDir, '13E.npy', ENP))
+                np.save(os.path.join(OutDir, '13D.npy', DNP))
             LogFile.write(LogText+'\n')
             print(LogText)
 
-            if GBF > -1e-3:
+            if CloseEVectorWeight < EVDown:
                 break
 
 def get_image(index):
