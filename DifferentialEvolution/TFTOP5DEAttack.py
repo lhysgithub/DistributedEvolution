@@ -45,6 +45,7 @@ CloseDVectorWeight = 0.01
 Convergence = 0.01
 StartNumber = 2
 Closed = 0                  # 用来标记是否进行靠近操作
+UnVaildExist = 0            # 用来表示是否因为探索广度过大导致无效数据过多
 def main():
     global OutDir
     global MaxEpoch
@@ -54,6 +55,7 @@ def main():
     global BatchSize
     global CloseDVectorWeight
     global CloseEVectorWeight
+    global UnVaildExist
 
     SourceImg,SourceClass = get_image(SourceIndex)
     TargetImg, TargetClass = get_image(TargetIndex)
@@ -201,6 +203,7 @@ def main():
             # 生成
             count = 0
             Times = 0
+            cycletimes = 0
             while count != INumber:
 
                 # 制造
@@ -244,6 +247,14 @@ def main():
                         DNP = ENP + StartStdDeviation
                         Times = 0
 
+                if cycletimes == 0:
+                    if i > 10 and count < INumber:
+                        UnVaildExist = 1
+                    elif i > 10 and count >= INumber:
+                        UnVaildExist = 0
+                cycletimes += 1
+
+
             # T,C, P= sess.run([TempImg,Confidence, Prediction])
             # C,P,I,ENP,DNP,PBF,PB = sess.run([Confidence,Prediction,IndividualFitness,Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual:initI})
             # we need updata E and D to updata I
@@ -269,18 +280,24 @@ def main():
             render_frame(sess, GB, i)
 
             End = time.time()
-            if LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
-                CloseDVectorWeight /= 2
+            PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SourceImg), axis=(1, 2, 3)))
+            # if i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
+                # CloseDVectorWeight *= 2
+                # CloseEVectorWeight *= 2
+                # DNP += CloseDVectorWeight
+                # ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
+                # print("Shaked")
+            if UnVaildExist == 1 and PBL2Distance < 20:
+                # CloseDVectorWeight /= 2
                 CloseEVectorWeight /= 2
-                DNP += CloseDVectorWeight
-                ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
-                print("Shaked and close up")
-            if abs(LastPBF - PBF) < Convergence:
+                print("UnValidExist")
+
+            if PBF - LastPBF < Convergence and LastPBF < PBF:
                 DNP += CloseDVectorWeight
                 ENP += (SourceImg-(StartImg+ENP))*CloseEVectorWeight
                 print("Close up")
 
-            PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SourceImg), axis=(1, 2, 3)))
+
             LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f GBL2Distance: %.4f" %(i,GBF,PBF,End-Start,PBL2Distance)
 
             LogFile.write(LogText+'\n')
