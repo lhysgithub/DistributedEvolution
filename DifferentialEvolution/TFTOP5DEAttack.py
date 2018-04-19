@@ -42,7 +42,7 @@ Domin = 0.75
 StartStdDeviation = 0.1
 EVUper = 0.1
 EVDown = 0.0001
-CloseEVectorWeight = 0.1
+CloseEVectorWeight = 0.3
 CloseDVectorWeight = 0.01
 Convergence = 0.01
 StartNumber = 2
@@ -265,14 +265,14 @@ def main():
             initI = np.clip(initI,Downer,Upper)
 
             LastPBF = PBF
-
+            LastDNP = DNP
+            LastENP = ENP
             ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],feed_dict={Individual: initI,logit:initCp})
             if PBF > GBF:
                 GB = PB
                 GBF = PBF
 
-            LastDNP = DNP
-            LastENP = ENP
+
 
             if GB.shape[0] > 1:
                 GB = GB[0]
@@ -286,35 +286,40 @@ def main():
             render_frame(sess, GB, i)
 
             End = time.time()
+            GBL2Distance = np.sqrt(np.sum(np.square(StartImg + GB - SourceImg), axis=(1, 2, 3)))
             PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SourceImg), axis=(1, 2, 3)))
 
-            LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f PBL2Distance: %.4f" % (
-            i, GBF, PBF, End - Start, PBL2Distance)
-
+            LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f PBL2Distance: %.4f GBL2Distance: %.4f" % (
+            i, GBF, PBF, End - Start, PBL2Distance,GBL2Distance)
+            print(LogText)
             if UnVaildExist == 1 :#出现无效数据
                 # CloseDVectorWeight /= 2
-                CloseEVectorWeight /= 2
-                # DNP = LastDNP + CloseDVectorWeight
-                # ENP = LastENP + (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
-                print("UnValidExist")
+                CloseEVectorWeight -= 0.01
+                DNP = LastDNP + CloseDVectorWeight
+                ENP = LastENP + (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
+                print("UnValidExist CEV: ",CloseEVectorWeight)
             elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
                 # CloseDVectorWeight *= 2
                 CloseEVectorWeight += 0.01
                 # DNP += CloseDVectorWeight
                 # ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
-                print("Shaked")
+                print("Shaked CEV: ",CloseEVectorWeight)
 
-            if PBF - LastPBF < Convergence and LastPBF < PBF:
+            if PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist!=1:#不能重复靠近
+                if GBL2Distance < 10:
+                    print("Complete")
+                    LogFile.write(LogText + '\n')
+                    break
                 DNP += CloseDVectorWeight
                 ENP += (SourceImg-(StartImg+ENP))*CloseEVectorWeight
-                print("Close up")
+                print("Close up CEV: ",CloseEVectorWeight)
 
 
-            if GBF > -13:
-                np.save(os.path.join(OutDir, '13E.npy', ENP))
-                np.save(os.path.join(OutDir, '13D.npy', DNP))
+            # if GBF > -13:
+            #     np.save(os.path.join(OutDir, '13E.npy', ENP))
+            #     np.save(os.path.join(OutDir, '13D.npy', DNP))
             LogFile.write(LogText+'\n')
-            print(LogText)
+
 
             if CloseEVectorWeight < EVDown:
                 break
