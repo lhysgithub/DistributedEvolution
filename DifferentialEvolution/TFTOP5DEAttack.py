@@ -40,7 +40,7 @@ Sigma = 1
 TopK = 5
 Domin = 0.75
 StartStdDeviation = 0.1
-EVUper = 0.1
+EVUper = 0.5
 EVDown = 0.0001
 CloseEVectorWeight = 0.3
 CloseDVectorWeight = 0.01
@@ -59,20 +59,40 @@ def main():
     global CloseEVectorWeight
     global UnVaildExist
 
-    SourceImg,SourceClass = get_image(SourceIndex)
-    TargetImg, TargetClass = get_image(TargetIndex)
-
-
-    StartUpper = np.clip(TargetImg + Domin,0.0,1.0)
-    StartDowner = np.clip(TargetImg - Domin,0.0,1.0)
 
     if os.path.exists(OutDir):
         shutil.rmtree(OutDir)
     os.makedirs(OutDir)
-    one_hot_vec = one_hot(TargetClass, NumClasses)
+
 
     with tf.Session() as sess:
 
+        # get image label
+        GetImage = tf.placeholder(shape=(1, 299, 299, 3), dtype=tf.float32)  # （299，299，3）
+        GetC, GetP = model(sess, GetImage)  # TMD 为啥在我的程序里这个model不好使了
+        #
+
+        def get_image(sess):
+            global InputDir
+            image_paths = sorted([os.path.join(InputDir, i) for i in os.listdir(InputDir)])
+
+            index = np.random.randint(len(image_paths))
+            path = image_paths[index]
+            x = load_image(path)
+            tempx = np.reshape(x, (1, 299, 299, 3))
+            y = sess.run(GetP, {GetImage: tempx})
+            y = y[0]
+            return x, y
+
+        SourceImg, SourceClass = get_image(sess)
+        TargetImg, TargetClass = get_image(sess)
+        while TargetClass == SourceClass:
+            TargetImg, TargetClass = get_image(sess)
+
+        StartUpper = np.clip(TargetImg + Domin, 0.0, 1.0)
+        StartDowner = np.clip(TargetImg - Domin, 0.0, 1.0)
+
+        one_hot_vec = one_hot(TargetClass, NumClasses)
         # ########################################计算startingpoint
         TestImge = tf.placeholder(shape=ImageShape,dtype=tf.float32) #（299，299，3）
         TestImgeEX = tf.reshape(TestImge, shape=(1, 299, 299, 3))  # （1，299，299，3）
@@ -90,9 +110,11 @@ def main():
         # ########################################startingpoint
 
         ## 预测
-        GenI = tf.placeholder(shape=(BatchSize,299,299,3),dtype=tf.float32) #（299，299，3）
+        GenI = tf.placeholder(shape=(BatchSize, 299, 299, 3), dtype=tf.float32)  # （299，299，3）
         GenC, GenP = model(sess, GenI)  # TMD 为啥在我的程序里这个model不好使了
         ##
+
+
 
         # 完成输入
         InputImg = tf.constant(StartImg,dtype=tf.float32) #（299，299，3）
@@ -324,24 +346,26 @@ def main():
             if CloseEVectorWeight < EVDown:
                 break
 
-def get_image(index):
-    global InputDir
-    data_path = os.path.join(InputDir, 'val')
-    image_paths = sorted([os.path.join(data_path, i) for i in os.listdir(data_path)])
-    # 修改
-    # assert len(image_paths) == 50000
-    labels_path = os.path.join(InputDir, 'val.txt')
-    with open(labels_path) as labels_file:
-        labels = [i.split(' ') for i in labels_file.read().strip().split('\n')]
-        labels = {os.path.basename(i[0]): int(i[1]) for i in labels}
 
-    def get(index):
-        path = image_paths[index]
-        x = load_image(path)
-        y = labels[os.path.basename(path)]
-        return x, y
+# def get_image(index):
+#     global InputDir
+#     data_path = os.path.join(InputDir, 'val')
+#     image_paths = sorted([os.path.join(data_path, i) for i in os.listdir(data_path)])
+#     # 修改
+#     # assert len(image_paths) == 50000
+#     labels_path = os.path.join(InputDir, 'val.txt')
+#     with open(labels_path) as labels_file:
+#         labels = [i.split(' ') for i in labels_file.read().strip().split('\n')]
+#         labels = {os.path.basename(i[0]): int(i[1]) for i in labels}
+#
+#     def get(index):
+#         path = image_paths[index]
+#         x = load_image(path)
+#         y = labels[os.path.basename(path)]
+#         return x, y
+#
+#     return get(index)
 
-    return get(index)
 
 def load_image(path):
     image = PIL.Image.open(path)
