@@ -37,7 +37,7 @@ Directions = 299*299*3
 ImageShape = (299,299,3)
 Sigma = 1
 TopK = 5
-Domin = 0.75
+Domin = 0.5
 StartStdDeviation = 0.1
 EVUper = 0.5
 EVDown = 0.0001
@@ -88,14 +88,15 @@ def main():
         TargetImg = tf.placeholder(dtype=tf.float32,shape=(299,299,3))
         TargetClass = tf.placeholder(dtype=tf.int32)
 
-        one_hot_vec = tf.placeholder(dtype=tf.float32,shape=(1000))
+        # one_hot_vec = tf.placeholder(dtype=tf.float32,shape=(1000))
         StImg = tf.placeholder(dtype=tf.float32,shape=(299,299,3))
 
 
         # 完成输入
         InputImg = StImg #（299，299，3）
         TempImg = tf.reshape(InputImg,shape=(1,299,299,3))   #（1，299，299，3）
-        Labels = tf.reshape(one_hot_vec, (1,1000)) # （INumber，1000）
+        # Labels = tf.reshape(tf.tile(one_hot_vec,[INumber]), (INumber,1000)) # （INumber，1000）
+        Labels = tf.placeholder(dtype=tf.int32,shape=(INumber,1000))
 
         # 开始进化算法
         Individual = tf.placeholder(shape=IndividualShape,dtype=tf.float32) # （INumber，299，299，3）
@@ -190,12 +191,19 @@ def main():
             return x, y
 
         for p in range(100):
+            StartStdDeviation = 0.1
+            CloseEVectorWeight = 0.3
+            CloseDVectorWeight = 0.01
+            Closed = 0  # 用来标记是否进行靠近操作
+            UnVaildExist = 0  # 用来表示是否因为探索广度过大导致无效数据过多
+
             index1 = p//10
             index2 = p%10
 
             SImg, SClass = get_image(sess,index1)
             TImg, TClass = get_image(sess,index2)
             OHV= one_hot(TClass,NumClasses)
+            LBS = np.repeat(np.expand_dims(OHV, axis=0),repeats=INumber, axis=0)
             if TClass == SClass:
                 LogText = "SClass == TClass"
                 LogFile = open(os.path.join(OutDir, 'log%d.txt' % p), 'w+')
@@ -206,9 +214,9 @@ def main():
             StartUpper = np.clip(TImg + Domin, 0.0, 1.0)
             StartDowner = np.clip(TImg - Domin, 0.0, 1.0)
 
-            def StartPoint(sess, SourceImg, TargetImg, TargetClass):
-                SourceImg = np.clip(SourceImg, StartDowner, StartUpper)
-                return SourceImg
+            def StartPoint(sess, SImg, TImg, TargetClass):
+                SImg = np.clip(SImg, StartDowner, StartUpper)
+                return SImg
 
             StartImg = StartPoint(sess, SImg, TImg, TargetClass)
             Upper = 1.0 - StartImg
@@ -256,7 +264,7 @@ def main():
                             if count == INumber:
                                 break
                     if count!= INumber :
-                        print("count: ", count," StartStdDeviation: ",StartStdDeviation)
+                        print("count: ", count," StartStdDeviation: %.2f"%StartStdDeviation)
 
                     if count > StartNumber-1 and count < INumber :
                         tempI = initI[0:count]
@@ -272,7 +280,7 @@ def main():
 
                     if i == 0 and count < StartNumber:
                         Times += 1
-                        if Times == 1 :
+                        if Times == 5 :
                             StartStdDeviation += 0.01
                             DNP = ENP + StartStdDeviation
                             Times = 0
@@ -293,7 +301,7 @@ def main():
                 LastPBF,LastDNP,LastENP = PBF,DNP,ENP
                 ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],
                                           feed_dict={Individual: initI,logit:initCp,SourceImg:SImg,SourceClass:SClass,
-                                                     TargetImg:TImg,TargetClass:TClass,one_hot_vec:OHV,StImg:StartImg})
+                                                     TargetImg:TImg,TargetClass:TClass,Labels:LBS,StImg:StartImg})
                 if PBF > GBF:
                     GB = PB
                     GBF = PBF
@@ -301,17 +309,18 @@ def main():
                 if GB.shape[0] > 1:
                     GB = GB[0]
                     DNP += CloseDVectorWeight
-                    ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
+                    ENP += (SImg - (StartImg + ENP)) * CloseEVectorWeight
                     print("GBConvergence")
 
                 if PB.shape[0] > 1:
                     PB = PB[0]
                     PB = np.reshape(PB,(1,299,299,3))
-                render_frame(sess, GB, i,SClass,TClass,StartImg)
+                # render_frame(sess, GB, p*1000+i,SClass,TClass,StartImg)
+
 
                 End = time.time()
-                GBL2Distance = np.sqrt(np.sum(np.square(StartImg + GB - SourceImg), axis=(1, 2, 3)))
-                PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SourceImg), axis=(1, 2, 3)))
+                GBL2Distance = np.sqrt(np.sum(np.square(StartImg + GB - SImg), axis=(1, 2, 3)))
+                PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SImg), axis=(1, 2, 3)))
 
                 LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f PBL2Distance: %.4f GBL2Distance: %.4f" % (
                 i, GBF, PBF, End - Start, PBL2Distance,GBL2Distance)
@@ -320,7 +329,7 @@ def main():
                     # CloseDVectorWeight /= 2
                     CloseEVectorWeight -= 0.01
                     DNP = LastDNP + CloseDVectorWeight
-                    ENP = LastENP + (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
+                    ENP = LastENP + (SImg - (StartImg + ENP)) * CloseEVectorWeight
                     print("UnValidExist CEV: ",CloseEVectorWeight)
                 elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
                     # CloseDVectorWeight *= 2
@@ -333,9 +342,10 @@ def main():
                     if GBL2Distance < 25:
                         print("Complete")
                         LogFile.write(LogText + '\n')
+                        render_frame(sess, GB, p, SClass, TClass, StartImg)
                         break
                     DNP += CloseDVectorWeight
-                    ENP += (SourceImg-(StartImg+ENP))*CloseEVectorWeight
+                    ENP += (SImg-(StartImg+ENP))*CloseEVectorWeight
                     print("Close up CEV: ",CloseEVectorWeight)
 
                 LogFile.write(LogText+'\n')
