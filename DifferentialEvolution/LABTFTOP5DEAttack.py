@@ -37,12 +37,10 @@ Directions = 299*299*3
 ImageShape = (299,299,3)
 Sigma = 1
 TopK = 5
-Domin = 0.5
-StartStdDeviation = 0.1
-EVUper = 0.5
-EVDown = 0.0001
+Domin = 0.25
+StartStdDeviation = 0.01
 CloseEVectorWeight = 0.3
-CloseDVectorWeight = 0.01
+CloseDVectorWeight = 0.02
 Convergence = 0.01
 StartNumber = 2
 Closed = 0                  # 用来标记是否进行靠近操作
@@ -191,9 +189,11 @@ def main():
             return x, y
 
         for p in range(100):
-            StartStdDeviation = 0.1
+            if p == 0:
+                p = 5
+            StartStdDeviation = 0.01
             CloseEVectorWeight = 0.3
-            CloseDVectorWeight = 0.01
+            CloseDVectorWeight = 0.02
             Closed = 0  # 用来标记是否进行靠近操作
             UnVaildExist = 0  # 用来表示是否因为探索广度过大导致无效数据过多
 
@@ -234,6 +234,9 @@ def main():
             LastENP = ENP
             LastDNP = DNP
             LogFile = open(os.path.join(OutDir, 'log%d.txt'%p), 'w+')
+            PBL2Distance = 100000
+            LastPBL2 = PBL2Distance
+            StartError = 0
 
             for i in range(MaxEpoch):
                 Start = time.time()
@@ -264,7 +267,9 @@ def main():
                             if count == INumber:
                                 break
                     if count!= INumber :
-                        print("count: ", count," StartStdDeviation: %.2f"%StartStdDeviation)
+                        LogText = "count: %3d StartStdDeviation: %.2f"%(count,StartStdDeviation)
+                        LogFile.write(LogText + '\n')
+                        print(LogText)
 
                     if count > StartNumber-1 and count < INumber :
                         tempI = initI[0:count]
@@ -296,6 +301,15 @@ def main():
                             UnVaildExist = 0
                     cycletimes += 1
 
+                    if StartStdDeviation >1 :
+                        LogText = "Start Error"
+                        LogFile.write(LogText + '\n')
+                        print(LogText)
+                        StartError = 1
+                        break
+                if StartError == 1:
+                    break
+
                 initI = np.clip(initI,Downer,Upper)
 
                 LastPBF,LastDNP,LastENP = PBF,DNP,ENP
@@ -308,36 +322,53 @@ def main():
 
                 if GB.shape[0] > 1:
                     GB = GB[0]
-                    DNP += CloseDVectorWeight
-                    ENP += (SImg - (StartImg + ENP)) * CloseEVectorWeight
+                    B = np.reshape(B, (1, 299, 299, 3))
+                    # DNP += CloseDVectorWeight
+                    # ENP += (SImg - (StartImg + ENP)) * CloseEVectorWeight
                     print("GBConvergence")
 
                 if PB.shape[0] > 1:
                     PB = PB[0]
                     PB = np.reshape(PB,(1,299,299,3))
+                    print("PBConvergence")
                 # render_frame(sess, GB, p*1000+i,SClass,TClass,StartImg)
 
 
                 End = time.time()
                 GBL2Distance = np.sqrt(np.sum(np.square(StartImg + GB - SImg), axis=(1, 2, 3)))
+                LastPBL2 = PBL2Distance
                 PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SImg), axis=(1, 2, 3)))
 
                 LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f PBL2Distance: %.4f GBL2Distance: %.4f" % (
                 i, GBF, PBF, End - Start, PBL2Distance,GBL2Distance)
+                LogFile.write(LogText + '\n')
                 print(LogText)
                 if UnVaildExist == 1 :#出现无效数据
                     # CloseDVectorWeight /= 2
                     CloseEVectorWeight -= 0.01
+                    # CloseDVectorWeight += 0.001
                     DNP = LastDNP + CloseDVectorWeight
                     ENP = LastENP + (SImg - (StartImg + ENP)) * CloseEVectorWeight
-                    print("UnValidExist CEV: ",CloseEVectorWeight)
-                elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
+                    LogText = "UnValidExist CEV: %.3f CDV: %.3f"%(CloseEVectorWeight,CloseDVectorWeight)
+                    LogFile.write(LogText + '\n')
+                    print(LogText)
+                # elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
+                elif Closed == 1:
+                    if LastPBL2 < PBL2Distance:
+                        # CloseDVectorWeight -= 0.001
+                        LogText = "L2Shaked CEV: %.3f CDV: %.3f" % (CloseEVectorWeight, CloseDVectorWeight)
+                        LogFile.write(LogText + '\n')
+                        print(LogText)
                     # CloseDVectorWeight *= 2
                     CloseEVectorWeight += 0.01
                     # DNP += CloseDVectorWeight
                     # ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
-                    print("Shaked CEV: ",CloseEVectorWeight)
+                    LogText = "CEVUP CEV: %.3f CDV: %.3f"%(CloseEVectorWeight,CloseDVectorWeight)
+                    LogFile.write(LogText + '\n')
+                    print(LogText)
 
+
+                Closed = 0
                 if PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist!=1:#不能重复靠近
                     if GBL2Distance < 25:
                         print("Complete")
@@ -346,11 +377,15 @@ def main():
                         break
                     DNP += CloseDVectorWeight
                     ENP += (SImg-(StartImg+ENP))*CloseEVectorWeight
-                    print("Close up CEV: ",CloseEVectorWeight)
+                    Closed = 1
+                    LogText = "Close up CEV: %.3f CDV: %.3f" % (CloseEVectorWeight, CloseDVectorWeight)
+                    LogFile.write(LogText + '\n')
+                    print(LogText)
 
-                LogFile.write(LogText+'\n')
-
-                if CloseEVectorWeight < EVDown:
+                if CloseEVectorWeight <= 0 or CloseDVectorWeight <= 0:
+                    LogText = "Closed Error"
+                    LogFile.write(LogText + '\n')
+                    print(LogText)
                     break
 
 
