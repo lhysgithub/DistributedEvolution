@@ -26,21 +26,21 @@ InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
 TargetIndex = 1
-INumber = 100               # 染色体个数 / 个体个数
-BatchSize = 100             # 寻找可用个体时用的批量上限
+INumber = 50                # 染色体个数 / 个体个数
+BatchSize = 50              # 寻找可用个体时用的批量上限
 NumClasses = 1000           # 标签种类
-MaxEpoch = 10000            # 迭代上限
-Reserve = 0.25              # 保留率 = 父子保留的精英量 / BestNumber
+MaxEpoch = 1000            # 迭代上限
+Reserve = 0.25               # 保留率 = 父子保留的精英量 / BestNumber
 BestNmber = int(INumber*Reserve) # 优秀样本数量
 IndividualShape = (INumber,299,299,3)
 Directions = 299*299*3
 ImageShape = (299,299,3)
 Sigma = 1
-TopK = 5
-Domin = 0.25
-StartStdDeviation = 0.01
+TopK = 20
+Domin = 0.5
+StartStdDeviation = 0.1
 CloseEVectorWeight = 0.3
-CloseDVectorWeight = 0.02
+CloseDVectorWeight = 0.01
 Convergence = 0.01
 StartNumber = 2
 Closed = 0                  # 用来标记是否进行靠近操作
@@ -48,12 +48,7 @@ UnVaildExist = 0            # 用来表示是否因为探索广度过大导致�
 def main():
     global OutDir
     global MaxEpoch
-    global SourceClass
-    global TargetClass
-    global StartStdDeviation
     global BatchSize
-    global CloseDVectorWeight
-    global CloseEVectorWeight
     global UnVaildExist
 
 
@@ -188,12 +183,14 @@ def main():
             y = y[0]
             return x, y
 
-        for p in range(100):
-            if p == 0:
-                p = 5
-            StartStdDeviation = 0.01
-            CloseEVectorWeight = 0.3
-            CloseDVectorWeight = 0.02
+        for p in range(6,100):
+            # if p == 0:
+            #     p = 5
+
+            SSD = StartStdDeviation
+            CEV = CloseEVectorWeight
+            CDV = CloseDVectorWeight
+            DM =Domin
             Closed = 0  # 用来标记是否进行靠近操作
             UnVaildExist = 0  # 用来表示是否因为探索广度过大导致无效数据过多
 
@@ -211,14 +208,13 @@ def main():
                 print(LogText)
                 continue
 
-            StartUpper = np.clip(TImg + Domin, 0.0, 1.0)
-            StartDowner = np.clip(TImg - Domin, 0.0, 1.0)
-
-            def StartPoint(sess, SImg, TImg, TargetClass):
+            def StartPoint(sess, SImg, TImg, TargetClass,Domin):
+                StartUpper = np.clip(TImg + Domin, 0.0, 1.0)
+                StartDowner = np.clip(TImg - Domin, 0.0, 1.0)
                 SImg = np.clip(SImg, StartDowner, StartUpper)
                 return SImg
 
-            StartImg = StartPoint(sess, SImg, TImg, TargetClass)
+            StartImg = StartPoint(sess, SImg, TImg, TargetClass,DM)
             Upper = 1.0 - StartImg
             Downer = 0.0 - StartImg
 
@@ -226,17 +222,23 @@ def main():
             PBF = GBF
             LastPBF = PBF
             GB = np.zeros([299, 299, 3], dtype=float)
-
+            BestAdv = np.zeros([299, 299, 3], dtype=float)
+            BestAdvL2 = 100000
+            BestAdvF = -1000000
             initI = np.zeros(IndividualShape, dtype = float)
             initCp = np.zeros((INumber,1000),dtype = float)
             ENP = np.zeros(ImageShape,dtype=float)
-            DNP = ENP+StartStdDeviation
+            DNP = np.zeros(ImageShape,dtype=float)+SSD
             LastENP = ENP
             LastDNP = DNP
             LogFile = open(os.path.join(OutDir, 'log%d.txt'%p), 'w+')
             PBL2Distance = 100000
-            LastPBL2 = PBL2Distance
+            LastPBL2 = 100000
             StartError = 0
+            FindValidExample = 0
+            ConstantShaked = 0
+            Shaked = 0
+            ConstantUnVaildExist =0
 
             for i in range(MaxEpoch):
                 Start = time.time()
@@ -267,7 +269,7 @@ def main():
                             if count == INumber:
                                 break
                     if count!= INumber :
-                        LogText = "count: %3d StartStdDeviation: %.2f"%(count,StartStdDeviation)
+                        LogText = "count: %3d SSD: %.2f DM: %.3f"%(count,SSD,DM)
                         LogFile.write(LogText + '\n')
                         print(LogText)
 
@@ -285,29 +287,50 @@ def main():
 
                     if i == 0 and count < StartNumber:
                         Times += 1
-                        if Times == 5 :
-                            StartStdDeviation += 0.01
-                            DNP = ENP + StartStdDeviation
+                        TimesUper = 1
+                        if count > 0:
+                            TimesUper = 5
+                        else:
+                            TimesUper = 1
+
+                        if Times == TimesUper :
+                            SSD += 0.01
+                            if SSD - StartStdDeviation >= StartStdDeviation/2:
+                                SSD = StartStdDeviation
+                                DM -= StartStdDeviation/2
+                                StartImg = StartPoint(sess, SImg, TImg, TargetClass,DM)
+                                Upper = 1.0 - StartImg
+                                Downer = 0.0 - StartImg
+
+                            DNP = np.zeros(ImageShape,dtype=float) + SSD
                             Times = 0
 
-                    if i>10 and count < INumber/25 :
+                    # 如果出现了样本无效化，回滚DNP,ENP
+                    if i>3 and count < StartNumber :
                         DNP = LastDNP
                         ENP = LastENP
 
+                    # 判断是否出现样本无效化
                     if cycletimes == 0:
-                        if i > 10 and count < INumber/25:
+                        if i > 3 and count < StartNumber:
                             UnVaildExist = 1
-                        elif i > 10 and count >= INumber/25:
+                        elif i > 3 and count >= StartNumber:
                             UnVaildExist = 0
                     cycletimes += 1
 
-                    if StartStdDeviation >1 :
+                    if SSD >1 :
                         LogText = "Start Error"
                         LogFile.write(LogText + '\n')
                         print(LogText)
                         StartError = 1
                         break
-                if StartError == 1:
+                    # if count > 0:
+                    #     LogText = "FindValidExample "
+                    #     LogFile.write(LogText + '\n')
+                    #     print(LogText)
+                    #     FindValidExample = 1
+                    #     break
+                if StartError == 1 or FindValidExample == 1:
                     break
 
                 initI = np.clip(initI,Downer,Upper)
@@ -322,9 +345,9 @@ def main():
 
                 if GB.shape[0] > 1:
                     GB = GB[0]
-                    B = np.reshape(B, (1, 299, 299, 3))
-                    # DNP += CloseDVectorWeight
-                    # ENP += (SImg - (StartImg + ENP)) * CloseEVectorWeight
+                    GB = np.reshape(GB, (1, 299, 299, 3))
+                    # DNP += CDV
+                    # ENP += (SImg - (StartImg + ENP)) * CEV
                     print("GBConvergence")
 
                 if PB.shape[0] > 1:
@@ -343,49 +366,87 @@ def main():
                 i, GBF, PBF, End - Start, PBL2Distance,GBL2Distance)
                 LogFile.write(LogText + '\n')
                 print(LogText)
+
                 if UnVaildExist == 1 :#出现无效数据
-                    # CloseDVectorWeight /= 2
-                    CloseEVectorWeight -= 0.01
-                    # CloseDVectorWeight += 0.001
-                    DNP = LastDNP + CloseDVectorWeight
-                    ENP = LastENP + (SImg - (StartImg + ENP)) * CloseEVectorWeight
-                    LogText = "UnValidExist CEV: %.3f CDV: %.3f"%(CloseEVectorWeight,CloseDVectorWeight)
+                    # CDV /= 2
+                    CEV -= 0.01
+                    # CDV = CEV / 3
+                    # CDV += 0.001
+                    if CEV < CDV*3:#3C原则
+                        CEV = CDV*3
+                    DNP = LastDNP + CDV
+                    ENP = LastENP + (SImg - (StartImg + ENP)) * CEV
+                    LogText = "UnValidExist CEV: %.3f CDV: %.3f"%(CEV,CDV)
                     LogFile.write(LogText + '\n')
                     print(LogText)
                 # elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
+                # elif LastPBL2 - LastPBF < PBL2Distance - PBF :
+                #     # CDV -= 0.001
+                #     DNP = LastDNP
+                #     ENP = LastENP
+                #     # Shaked = 1
+                #     # LogText = "Shaked CEV: %.3f CDV: %.3f ConstantShaked: %2d" % (CEV, CDV,ConstantShaked)
+                #     LogText = "Shaked"
+                #     LogFile.write(LogText + '\n')
+                #     print(LogText)
                 elif Closed == 1:
-                    if LastPBL2 < PBL2Distance:
-                        # CloseDVectorWeight -= 0.001
-                        LogText = "L2Shaked CEV: %.3f CDV: %.3f" % (CloseEVectorWeight, CloseDVectorWeight)
-                        LogFile.write(LogText + '\n')
-                        print(LogText)
-                    # CloseDVectorWeight *= 2
-                    CloseEVectorWeight += 0.01
-                    # DNP += CloseDVectorWeight
-                    # ENP += (SourceImg - (StartImg + ENP)) * CloseEVectorWeight
-                    LogText = "CEVUP CEV: %.3f CDV: %.3f"%(CloseEVectorWeight,CloseDVectorWeight)
+                    CEV += 0.01
+                    # CDV = CEV / 3
+                    LogText = "CEVUP CEV: %.3f CDV: %.3f"%(CEV,CDV)
                     LogFile.write(LogText + '\n')
                     print(LogText)
-
 
                 Closed = 0
-                if PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist!=1:#不能重复靠近
-                    if GBL2Distance < 25:
-                        print("Complete")
+                # if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist!=1) or ConstantShaked==3:#不能重复靠近
+                if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) :  # 不能重复靠近
+                    if (PBL2Distance + PBF > -1):# 靠近
+                        DNP += CDV
+                        ENP += (SImg-(StartImg+ENP))*CEV
+                        Closed = 1
+                        # Shaked = 0
+                        LogText = "Close up CEV: %.3f CDV: %.3f" % (CEV, CDV)
                         LogFile.write(LogText + '\n')
-                        render_frame(sess, GB, p, SClass, TClass, StartImg)
-                        break
-                    DNP += CloseDVectorWeight
-                    ENP += (SImg-(StartImg+ENP))*CloseEVectorWeight
-                    Closed = 1
-                    LogText = "Close up CEV: %.3f CDV: %.3f" % (CloseEVectorWeight, CloseDVectorWeight)
-                    LogFile.write(LogText + '\n')
-                    print(LogText)
+                        print(LogText)
+                    else : # 放缩
+                        CEV += 0.01
+                        DNP += CDV
+                        LogText = "Scaling up CEV: %.3f CDV: %.3f" % (CEV, CDV)
+                        LogFile.write(LogText + '\n')
+                        print(LogText)
 
-                if CloseEVectorWeight <= 0 or CloseDVectorWeight <= 0:
-                    LogText = "Closed Error"
-                    LogFile.write(LogText + '\n')
+                # if CEV <= 0.01 :
+                #     LogText = "Closed Error GBL2: %.4f GBF: %.4f" % (BestAdvL2, BestAdvF)
+                #     print(LogText)
+                #     LogFile.write(LogText + '\n')
+                #     render_frame(sess, BestAdv, p, SClass, TClass, StartImg)
+                #     break
+                if UnVaildExist == 1:
+                    ConstantUnVaildExist += 1
+                else:
+                    ConstantUnVaildExist =0
+
+                # 连续shake也可以判断收敛
+                # if Shaked ==1:
+                #     ConstantShaked += 1
+                # else :
+                #     ConstantShaked =0
+
+                if PBL2Distance + PBF > -1:
+                    BestAdv = PB
+                    BestAdvL2 = PBL2Distance
+                    BestAdvF = PBF
+
+                if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) and PBL2Distance < 15 and PBL2Distance + PBF > -1:
+                    LogText = "Complete"
                     print(LogText)
+                    LogFile.write(LogText + '\n')
+                    render_frame(sess, GB, p, SClass, TClass, StartImg)
+                    break
+                if i == MaxEpoch-1 or ConstantUnVaildExist == 30:
+                    LogText = "Complete to MaxEpoch GBL2: %.4f GBF: %.4f"%(BestAdvL2,BestAdvF)
+                    print(LogText)
+                    LogFile.write(LogText + '\n')
+                    render_frame(sess, BestAdv, p, SClass, TClass, StartImg)
                     break
 
 
