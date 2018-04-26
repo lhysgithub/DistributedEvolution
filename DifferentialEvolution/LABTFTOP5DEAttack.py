@@ -40,7 +40,7 @@ TopK = 20
 Domin = 0.5
 StartStdDeviation = 0.1
 CloseEVectorWeight = 0.3
-CloseDVectorWeight = 0.01
+CloseDVectorWeight = 0.1
 Convergence = 0.01
 StartNumber = 2
 Closed = 0                  # 用来标记是否进行靠近操作
@@ -370,11 +370,11 @@ def main():
                 if UnVaildExist == 1 :#出现无效数据
                     # CDV /= 2
                     CEV -= 0.01
-                    # CDV = CEV / 3
+                    CDV = CEV / 3
                     # CDV += 0.001
-                    if CEV < CDV*3:#3C原则
-                        CEV = CDV*3
-                    DNP = LastDNP + CDV
+                    # if CEV < CDV*3:#3C原则
+                    #     CEV = CDV*3
+                    DNP = LastDNP + (SImg - (StartImg + ENP)) * CDV
                     ENP = LastENP + (SImg - (StartImg + ENP)) * CEV
                     LogText = "UnValidExist CEV: %.3f CDV: %.3f"%(CEV,CDV)
                     LogFile.write(LogText + '\n')
@@ -391,7 +391,7 @@ def main():
                 #     print(LogText)
                 elif Closed == 1:
                     CEV += 0.01
-                    # CDV = CEV / 3
+                    CDV = CEV / 3
                     LogText = "CEVUP CEV: %.3f CDV: %.3f"%(CEV,CDV)
                     LogFile.write(LogText + '\n')
                     print(LogText)
@@ -400,7 +400,7 @@ def main():
                 # if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist!=1) or ConstantShaked==3:#不能重复靠近
                 if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) :  # 不能重复靠近
                     if (PBL2Distance + PBF > -1):# 靠近
-                        DNP += CDV
+                        DNP += (SImg-(StartImg+ENP))*CDV
                         ENP += (SImg-(StartImg+ENP))*CEV
                         Closed = 1
                         # Shaked = 0
@@ -408,8 +408,9 @@ def main():
                         LogFile.write(LogText + '\n')
                         print(LogText)
                     else : # 放缩
-                        CEV += 0.01
-                        DNP += CDV
+                        # CEV += 0.01
+                        # CDV = CEV / 3
+                        DNP += (SImg-(StartImg+ENP))*CDV
                         LogText = "Scaling up CEV: %.3f CDV: %.3f" % (CEV, CDV)
                         LogFile.write(LogText + '\n')
                         print(LogText)
