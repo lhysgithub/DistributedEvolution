@@ -29,7 +29,7 @@ TargetIndex = 1
 INumber = 50                # 染色体个数 / 个体个数
 BatchSize = 50              # 寻找可用个体时用的批量上限
 NumClasses = 1000           # 标签种类
-MaxEpoch = 1000            # 迭代上限
+MaxEpoch = 10000            # 迭代上限
 Reserve = 0.25               # 保留率 = 父子保留的精英量 / BestNumber
 BestNmber = int(INumber*Reserve) # 优秀样本数量
 IndividualShape = (INumber,299,299,3)
@@ -183,7 +183,7 @@ def main():
             y = y[0]
             return x, y
 
-        for p in range(6,100):
+        for p in range(10,100):
             # if p == 0:
             #     p = 5
 
@@ -399,7 +399,7 @@ def main():
                 Closed = 0
                 # if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist!=1) or ConstantShaked==3:#不能重复靠近
                 if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) :  # 不能重复靠近
-                    if (PBL2Distance + PBF > -1):# 靠近
+                    if (PBL2Distance + PBF > -0.5):# 靠近
                         DNP += (SImg-(StartImg+ENP))*CDV
                         ENP += (SImg-(StartImg+ENP))*CEV
                         Closed = 1
@@ -432,12 +432,12 @@ def main():
                 # else :
                 #     ConstantShaked =0
 
-                if PBL2Distance + PBF > -1:
+                if PBL2Distance + PBF > -0.5:
                     BestAdv = PB
                     BestAdvL2 = PBL2Distance
                     BestAdvF = PBF
 
-                if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) and PBL2Distance < 15 and PBL2Distance + PBF > -1:
+                if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) and PBL2Distance < 5 and PBL2Distance + PBF > -0.5:
                     LogText = "Complete"
                     print(LogText)
                     LogFile.write(LogText + '\n')
