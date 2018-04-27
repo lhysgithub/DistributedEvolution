@@ -39,9 +39,10 @@ MIN_LR = 5e-5
 # Things you probably don't want to change:
 MAX_QUERIES = 4000000
 num_indices = 50000
-num_labels = 1000
+num_Labels = 1000
 IMG_INDEX = 0
 target_image_index = 1
+
 
 def main():
     out_dir = OUT_DIR
@@ -49,17 +50,9 @@ def main():
     print('Starting partial-information attack with only top-' + str(k))
     # target_image_index = pseudorandom_target_image(IMG_INDEX, num_indices)
 
-    x, y = get_image(IMG_INDEX)
-    orig_class = y
-    initial_img = x
 
-    target_img = None
-    target_img, _ = get_image(target_image_index)
-    target_class = orig_class
-    # target_class = orig_class
-    print('Set target class to be original img class %d for partial-info attack' % target_class)
-    
-    sess = tf.InteractiveSession()
+    # TargetClass = OrigClass
+    # print('Set target class to be original img class %d for partial-info attack' % TargetClass)
 
     if os.path.exists(out_dir):
         shutil.rmtree(out_dir)
@@ -67,33 +60,36 @@ def main():
     os.makedirs(out_dir)
     batch_size = min(BATCH_SIZE, SAMPLES_PER_DRAW)
     assert SAMPLES_PER_DRAW % BATCH_SIZE == 0
-    one_hot_vec = one_hot(target_class, num_labels)
 
-    x = tf.placeholder(tf.float32, initial_img.shape)
+    # 以上全部移到循环
+    sess = tf.InteractiveSession()
+    labels = tf.placeholder(tf.float32, shape=(batch_size,num_Labels))
+    Init_Img = tf.placeholder(tf.float32, shape=(299,299,3))
+    Target_Img = tf.placeholder(tf.float32, shape=(299,299,3))
+    Target_Class = tf.placeholder(tf.int64)
+
+    x = tf.placeholder(tf.float32, Init_Img.shape)
     x_t = tf.expand_dims(x, axis=0)
     gpus = [get_available_gpus()[0]]
-    labels = np.repeat(np.expand_dims(one_hot_vec, axis=0),
-                       repeats=batch_size, axis=0)
-
 
     grad_estimates = []
     final_losses = []
     for i, device in enumerate(gpus):
         with tf.device(device):
             print('loading on gpu %d of %d' % (i+1, len(gpus)))
-            noise_pos = tf.random_normal((batch_size//2,) + initial_img.shape)
+            noise_pos = tf.random_normal((batch_size//2,299,299,3))
             noise = tf.concat([noise_pos, -noise_pos], axis=0)
             eval_points = x_t + SIGMA * noise
             logits, preds = model(sess, eval_points)
             losses = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
         vals, inds = tf.nn.top_k(logits, k=K)
         # inds is batch_size x k
-        good_inds = tf.where(tf.equal(inds, tf.constant(target_class))) # returns (# true) x 3
+        good_inds = tf.where(tf.equal(inds, tf.cast(Target_Class,dtype=tf.int32))) # returns (# true) x 3
         good_images = good_inds[:,0] # inds of img in batch that worked
         losses = tf.gather(losses, good_images)
         noise = tf.gather(noise, good_images)
 
-        losses_tiled = tf.tile(tf.reshape(losses, (-1, 1, 1, 1)), (1,) + initial_img.shape)
+        losses_tiled = tf.tile(tf.reshape(losses, (-1, 1, 1, 1)), (1,299,299,3))
         grad_estimates.append(tf.reduce_mean(losses_tiled * noise, \
             axis=0)/SIGMA)
         final_losses.append(losses)
@@ -103,14 +99,14 @@ def main():
     # eval network
     with tf.device(gpus[0]):
         eval_logits, eval_preds = model(sess, x_t)
-        eval_adv = tf.reduce_sum(tf.to_float(tf.equal(eval_preds, target_class)))
+        eval_adv = tf.reduce_sum(tf.to_float(tf.equal(eval_preds, Target_Class)))
 
     samples_per_draw = SAMPLES_PER_DRAW
-    def get_grad(pt, should_calc_truth=False):
+    def get_grad(pt,InitImg,TargetImg,TargetClass,Labels,should_calc_truth=False):
         num_batches = samples_per_draw // batch_size
         losses = []
         grads = []
-        feed_dict = {x: pt}
+        feed_dict = {x: pt,Init_Img:InitImg,Target_Img:TargetImg,Target_Class:TargetClass,labels:Labels}
         for _ in range(num_batches):
             loss, dl_dx_ = sess.run([final_losses, grad_estimate], feed_dict)
             losses.append(np.mean(loss))
@@ -118,11 +114,11 @@ def main():
         return np.array(losses).mean(), np.mean(np.array(grads), axis=0)
 
     with tf.device('/cpu:0'):
-        render_feed = tf.placeholder(tf.float32, initial_img.shape)
+        render_feed = tf.placeholder(tf.float32, Init_Img.shape)
         render_exp = tf.expand_dims(render_feed, axis=0)
         render_logits, _ = model(sess, render_exp)
 
-    def render_frame(image, save_index):
+    def render_frame(image, save_index,OrigClass,TargetClass):
         # actually draw the figure
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 8))
         # image
@@ -136,9 +132,9 @@ def main():
         topprobs = probs[topk]
         barlist = ax2.bar(range(5), topprobs)
         for i, v in enumerate(topk):
-            if v == orig_class:
+            if v == OrigClass:
                 barlist[i].set_color('g')
-            if v == target_class:
+            if v == TargetClass:
                 barlist[i].set_color('r')
         plt.sca(ax2)
         plt.ylim([0, 1.1])
@@ -151,89 +147,102 @@ def main():
         plt.savefig(path)
         plt.close()
 
-    adv = initial_img.copy()
-    assert out_dir[-1] == '/'
+    for p in range(100):
+        target_image_index = p//10
+        IMG_INDEX = p%10
+        InitImg, OrigClass = get_image(IMG_INDEX)
+        TargetImg, _ = get_image(target_image_index)
+        TargetClass = OrigClass
 
-    log_file = open(os.path.join(out_dir, 'log.txt'), 'w+')
-    g = 0
-    num_queries = 0
+        one_hot_vec = one_hot(TargetClass, num_Labels)
+        Labels = np.repeat(np.expand_dims(one_hot_vec, axis=0),
+                           repeats=batch_size, axis=0)
 
-    last_ls = []
-    current_lr = LEARNING_RATE
+        adv = InitImg.copy()
+        assert out_dir[-1] == '/'
 
-    max_iters = int(np.ceil(MAX_QUERIES // SAMPLES_PER_DRAW))
-    real_eps = 0.5
+        log_file = open(os.path.join(out_dir, 'log%d.txt'%p), 'w+')
+        g = 0
+        num_queries = 0
+
+        last_ls = []
+        current_lr = LEARNING_RATE
+
+        max_iters = int(np.ceil(MAX_QUERIES // SAMPLES_PER_DRAW))
+        real_eps = 0.5
     
-    lrs = []
-    max_lr = MAX_LR
-    epsilon_decay = EPS_DECAY
-    last_good_adv = adv
-    for i in range(max_iters):
-        start = time.time()
-        render_frame(adv, i)
+        lrs = []
+        max_lr = MAX_LR
+        epsilon_decay = EPS_DECAY
+        last_good_adv = adv
+        for i in range(max_iters):
+            start = time.time()
+            render_frame(adv, p,OrigClass,TargetClass)
 
-        # see if we should stop
-        padv = sess.run(eval_adv, feed_dict={x: adv})
-        if (padv == 1) and (real_eps <= EPSILON):
-            print('partial info early stopping at iter %d' % i)
-            break
-
-        assert target_img is not None
-        lower = np.clip(target_img - real_eps, 0., 1.)
-        upper = np.clip(target_img + real_eps, 0., 1.)
-        prev_g = g
-        l, g = get_grad(adv)
-
-        if l < 0.2:
-            real_eps = max(EPSILON, real_eps - epsilon_decay)
-            max_lr = MAX_LR
-            last_good_adv = adv
-            epsilon_decay = EPS_DECAY
-            if real_eps <= EPSILON:
-                samples_per_draw = 5000
-            last_ls = []
-
-        # simple momentum
-        g = MOMENTUM * prev_g + (1.0 - MOMENTUM) * g
-
-        last_ls.append(l)
-        last_ls = last_ls[-5:]
-        if last_ls[-1] > last_ls[0] and len(last_ls) == 5:
-            if max_lr > MIN_LR:
-                print("ANNEALING MAX LR")
-                max_lr = max(max_lr / 2.0, MIN_LR)
-            else:
-                print("ANNEALING EPS DECAY")
-                adv = last_good_adv # start over with a smaller eps
-                l, g = get_grad(adv)
-                assert (l < 1)
-                epsilon_decay = max(epsilon_decay / 2, MIN_EPS_DECAY)
-            last_ls = []
-
-        # backtracking line search for optimal lr
-        current_lr = max_lr
-        while current_lr > MIN_LR:
-            proposed_adv = adv - current_lr * np.sign(g)
-            proposed_adv = np.clip(proposed_adv, lower, upper)
-            num_queries += 1
-            eval_logits_ = sess.run(eval_logits, {x: proposed_adv})[0]
-            if target_class in eval_logits_.argsort()[-k:][::-1]:
-                lrs.append(current_lr)
-                adv = proposed_adv
+            # see if we should stop
+            padv = sess.run(eval_adv, feed_dict=
+            {x: adv,Init_Img:InitImg,Target_Img:TargetImg,Target_Class:TargetClass,labels:Labels})
+            if (padv == 1) and (real_eps <= EPSILON):
+                print('partial info early stopping at iter %d' % i)
                 break
-            else:
-                current_lr = current_lr / 2
-                print('backtracking, lr = %.2E' % current_lr)
 
-        num_queries += SAMPLES_PER_DRAW
+            assert TargetImg is not None
+            lower = np.clip(TargetImg - real_eps, 0., 1.)
+            upper = np.clip(TargetImg + real_eps, 0., 1.)
+            prev_g = g
+            l, g = get_grad(adv,InitImg,TargetImg,TargetClass,Labels)
 
-        log_text = 'Step %05d: loss %.4f eps %.4f eps-decay %.4E lr %.2E (time %.4f)' % (i, l, \
-                real_eps, epsilon_decay, current_lr, time.time() - start)
-        log_file.write(log_text + '\n')
-        print(log_text)
+            if l < 0.2:
+                real_eps = max(EPSILON, real_eps - epsilon_decay)
+                max_lr = MAX_LR
+                last_good_adv = adv
+                epsilon_decay = EPS_DECAY
+                if real_eps <= EPSILON:
+                    samples_per_draw = 5000
+                last_ls = []
 
-        np.save(os.path.join(out_dir, '%s.npy' % (i+1)), adv)
-        scipy.misc.imsave(os.path.join(out_dir, '%s.png' % (i+1)), adv)
+            # simple momentum
+            g = MOMENTUM * prev_g + (1.0 - MOMENTUM) * g
+
+            last_ls.append(l)
+            last_ls = last_ls[-5:]
+            if last_ls[-1] > last_ls[0] and len(last_ls) == 5:
+                if max_lr > MIN_LR:
+                    print("ANNEALING MAX LR")
+                    max_lr = max(max_lr / 2.0, MIN_LR)
+                else:
+                    print("ANNEALING EPS DECAY")
+                    adv = last_good_adv # start over with a smaller eps
+                    l, g = get_grad(adv,InitImg,TargetImg,TargetClass,Labels)
+                    assert (l < 1)
+                    epsilon_decay = max(epsilon_decay / 2, MIN_EPS_DECAY)
+                last_ls = []
+
+            # backtracking line search for optimal lr
+            current_lr = max_lr
+            while current_lr > MIN_LR:
+                proposed_adv = adv - current_lr * np.sign(g)
+                proposed_adv = np.clip(proposed_adv, lower, upper)
+                num_queries += 1
+                eval_logits_ = sess.run(eval_logits,
+                                        {x: proposed_adv,Init_Img:InitImg,Target_Img:TargetImg,Target_Class:TargetClass,labels:Labels})[0]
+                if TargetClass in eval_logits_.argsort()[-k:][::-1]:
+                    lrs.append(current_lr)
+                    adv = proposed_adv
+                    break
+                else:
+                    current_lr = current_lr / 2
+                    print('backtracking, lr = %.2E' % current_lr)
+
+            num_queries += SAMPLES_PER_DRAW
+
+            log_text = 'Step %05d: loss %.4f eps %.4f eps-decay %.4E lr %.2E (time %.4f)' % (i, l, \
+                    real_eps, epsilon_decay, current_lr, time.time() - start)
+            log_file.write(log_text + '\n')
+            print(log_text)
+
+            # np.save(os.path.join(out_dir, '%s.npy' % (i+1)), adv)
+            scipy.misc.imsave(os.path.join(out_dir, '%s.png' % (p)), adv)
 
 def pseudorandom_target(index, total_indices, true_class):
     rng = np.random.RandomState(index)
@@ -244,24 +253,24 @@ def pseudorandom_target(index, total_indices, true_class):
 
 def pseudorandom_target_image(orig_index, total_indices):
     rng = np.random.RandomState(orig_index)
-    target_img_index = orig_index
-    while target_img_index == orig_index:
-        target_img_index = rng.randint(0, total_indices)
-    return target_img_index
+    TargetImg_index = orig_index
+    while TargetImg_index == orig_index:
+        TargetImg_index = rng.randint(0, total_indices)
+    return TargetImg_index
 
 def get_image(index):
     data_path = os.path.join(IMAGENET_PATH, 'val')
     image_paths = sorted([os.path.join(data_path, i) for i in os.listdir(data_path)])
     # 修改
     # assert len(image_paths) == 50000
-    labels_path = os.path.join(IMAGENET_PATH, 'val.txt')
-    with open(labels_path) as labels_file:
-        labels = [i.split(' ') for i in labels_file.read().strip().split('\n')]
-        labels = {os.path.basename(i[0]): int(i[1]) for i in labels}
+    Labels_path = os.path.join(IMAGENET_PATH, 'val.txt')
+    with open(Labels_path) as Labels_file:
+        Labels = [i.split(' ') for i in Labels_file.read().strip().split('\n')]
+        Labels = {os.path.basename(i[0]): int(i[1]) for i in Labels}
     def get(index):
         path = image_paths[index]
         x = load_image(path)
-        y = labels[os.path.basename(path)]
+        y = Labels[os.path.basename(path)]
         return x, y
     return get(index)
 

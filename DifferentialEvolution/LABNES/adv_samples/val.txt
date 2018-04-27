@@ -1,0 +1,12 @@
+./val/230.jpg 230
+./val/286.jpg 286
+./val/327.jpg 327
+./val/370.jpg 370
+./val/478.png 478
+./val/516.png 516
+./val/573.jpg 573
+./val/586.jpg 586
+./val/757.jpg 757
+./val/809.jpg 809
+
+
