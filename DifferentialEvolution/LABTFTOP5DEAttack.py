@@ -41,7 +41,7 @@ Domin = 0.5
 StartStdDeviation = 0.1
 CloseEVectorWeight = 0.3
 CloseDVectorWeight = 0.1
-Convergence = 0.01
+Convergence = 0.1
 StartNumber = 2
 Closed = 0                  # 用来标记是否进行靠近操作
 UnVaildExist = 0            # 用来表示是否因为探索广度过大导致无效数据过多
@@ -241,10 +241,10 @@ def main():
             Shaked = 0
             ConstantUnVaildExist =0
             QueryTimes = 0
+            UnVaildExist = 0    # 用来表示是否因为探索广度过大导致无效数据过多
+            Retry = 0
+            Closed = 0          # 用来标记是否进行靠近操作
             Scaling = 0
-            Closed = 0  # 用来标记是否进行靠近操作
-            UnVaildExist = 0  # 用来表示是否因为探索广度过大导致无效数据过多
-            Shaked = 0
             for i in range(MaxEpoch):
                 Start = time.time()
 
@@ -313,8 +313,16 @@ def main():
 
                     # 如果出现了样本无效化，回滚DNP,ENP
                     if i>3 and count < StartNumber :
-                        DNP = LastDNP
-                        ENP = LastENP
+                        CEV -= 0.01
+                        CDV = CEV / 3
+                        if CEV <= 0.01:
+                            CEV = 0.01
+                            CDV = CEV / 3
+                        DNP = LastDNP + (SImg - (StartImg + ENP)) * CDV
+                        ENP = LastENP + (SImg - (StartImg + ENP)) * CEV
+                        LogText = "UnValidExist CEV: %.3f CDV: %.3f" % (CEV, CDV)
+                        LogFile.write(LogText + '\n')
+                        print(LogText)
 
                     # 判断是否出现样本无效化
                     if cycletimes == 0:
@@ -368,98 +376,70 @@ def main():
                 LastPBL2 = PBL2Distance
                 PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SImg), axis=(1, 2, 3)))
 
-                i, GBF, PBF, End - Start, PBL2Distance,GBL2Distance)
                 LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f PBL2Distance: %.4f GBL2Distance: %.4f QueryTimes: %d" % (
                 i, GBF, PBF, End - Start, PBL2Distance,GBL2Distance,QueryTimes)
                 LogFile.write(LogText + '\n')
                 print(LogText)
 
-                if UnVaildExist == 1 :#出现无效数据
-                    # CDV /= 2
-                    CEV -= 0.01
-                    CDV = CEV / 3
-                    if CEV <=0.01:
-                        CEV = 0.01
-                        CDV = CEV / 3
-                    # CDV += 0.001
-                    # if CEV < CDV*3:#3C原则
-                    #     CEV = CDV*3
-                    DNP = LastDNP + (SImg - (StartImg + ENP)) * CDV
-                    ENP = LastENP + (SImg - (StartImg + ENP)) * CEV
-                    LogText = "UnValidExist CEV: %.3f CDV: %.3f"%(CEV,CDV)
-                    LogFile.write(LogText + '\n')
-                    print(LogText)
-                # elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
-                elif Closed == 1:
-                    CEV += 0.01
-                    CDV = CEV / 3
-                    LogText = "CEVUP CEV: %.3f CDV: %.3f"%(CEV,CDV)
-                    LogFile.write(LogText + '\n')
-                    print(LogText)
-                elif Scaling == 0 and LastPBL2 - LastPBF < PBL2Distance - PBF :
-                    # CDV -= 0.001
-                    DNP = LastDNP
-                    ENP = LastENP
-                    Shaked = 1
-                    # LogText = "Shaked CEV: %.3f CDV: %.3f ConstantShaked: %2d" % (CEV, CDV,ConstantShaked)
-                    LogText = "Shaked"
-                    LogFile.write(LogText + '\n')
-                    print(LogText)
-                else :
-                    Shaked = 0
 
-                Closed = 0
-                Scaling = 0
-                # if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist!=1) or ConstantShaked==3:#不能重复靠近
-                if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1 and Shaked != 1) :  # 不能重复靠近
+                if UnVaildExist == 1 :#出现无效数据
+                    Retry = 1
+                    Closed = 0
+                    Scaling = 0
+
+                # elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
+                elif PBF - LastPBF < Convergence and LastPBF < PBF :
                     if (PBL2Distance + PBF > -0.5):# 靠近
+                        Closed = 1
+                        Retry = 0
+                        Scaling = 0
+                        CEV += 0.01
+                        CDV = CEV / 3
                         DNP += (SImg-(StartImg+ENP))*CDV
                         ENP += (SImg-(StartImg+ENP))*CEV
-                        Closed = 1
-                        # Shaked = 0
                         LogText = "Close up CEV: %.3f CDV: %.3f" % (CEV, CDV)
                         LogFile.write(LogText + '\n')
                         print(LogText)
                     else : # 放缩
-                        # CEV += 0.01
-                        # CDV = CEV / 3
                         Scaling = 1
+                        Closed = 0
+                        Retry = 0
                         DNP += (SImg-(StartImg+ENP))*CDV
                         LogText = "Scaling up CEV: %.3f CDV: %.3f" % (CEV, CDV)
                         LogFile.write(LogText + '\n')
                         print(LogText)
+                elif (Retry == 0 and Closed == 0 and Scaling == 0) and LastPBL2 - LastPBF < PBL2Distance - PBF:# 反而找到了不好的解
+                    # Shaked = 1
+                    DNP = LastDNP
+                    ENP = LastENP
+                    # LogText = "Shaked CEV: %.3f CDV: %.3f ConstantShaked: %2d" % (CEV, CDV,ConstantShaked)
+                    LogText = "Shaked"
+                    LogFile.write(LogText + '\n')
+                    print(LogText)
+                else:
+                    Scaling = 0
+                    Closed = 0
+                    Retry = 0
 
-                # if CEV <= 0.01 :
-                #     LogText = "Closed Error GBL2: %.4f GBF: %.4f" % (BestAdvL2, BestAdvF)
-                #     print(LogText)
-                #     LogFile.write(LogText + '\n')
-                #     render_frame(sess, BestAdv, p, SClass, TClass, StartImg)
-                #     break
+
                 if UnVaildExist == 1:
                     ConstantUnVaildExist += 1
                 else:
                     ConstantUnVaildExist =0
-
-                # 连续shake也可以判断收敛
-                # if Shaked ==1:
-                #     ConstantShaked += 1
-                # else :
-                #     ConstantShaked =0
 
                 if PBL2Distance + PBF > -0.5:
                     BestAdv = PB
                     BestAdvL2 = PBL2Distance
                     BestAdvF = PBF
 
-                # if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) and BestAdvL2 < 26:
                 if  BestAdvL2 < 26:
-                    LogText = "Complete GBL2: %.4f GBF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
+                    LogText = "Complete BestAdvL2: %.4f BestAdvF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
                     print(LogText)
                     LogFile.write(LogText + '\n')
                     render_frame(sess, BestAdv, p, SClass, TClass, StartImg)
                     break
                 if i == MaxEpoch-1 or ConstantUnVaildExist == 30:
-                    LogText = "Complete to MaxEpoch GBL2: %.4f GBF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
+                    LogText = "Complete to MaxEpoch or ConstantUnVaildExist BestAdvL2: %.4f BestAdvF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
                     print(LogText)
                     LogFile.write(LogText + '\n')
                     render_frame(sess, BestAdv, p, SClass, TClass, StartImg)
