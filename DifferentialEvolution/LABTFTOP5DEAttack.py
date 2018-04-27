@@ -45,11 +45,13 @@ Convergence = 0.01
 StartNumber = 2
 Closed = 0                  # 用来标记是否进行靠近操作
 UnVaildExist = 0            # 用来表示是否因为探索广度过大导致无效数据过多
+# QueryTimes = 0
 def main():
     global OutDir
     global MaxEpoch
     global BatchSize
     global UnVaildExist
+    QueryTimes = 0
 
 
     if os.path.exists(OutDir):
@@ -260,7 +262,8 @@ def main():
                     testimage = temp + np.reshape(StartImg,(1,299,299,3))
                     CP, PP = sess.run([GenC,GenP],{GenI:testimage})
                     CP = np.reshape(CP, (BatchSize, 1000))
-                # 筛选
+                    # 筛选
+                    QueryTimes += BatchSize
                     for j in range(BatchSize):
                         if TClass in CP[j].argsort()[-TopK:][::-1]:
                             initI[count] = temp[j]
@@ -437,14 +440,15 @@ def main():
                     BestAdvL2 = PBL2Distance
                     BestAdvF = PBF
 
-                if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) and PBL2Distance < 5 and PBL2Distance + PBF > -0.5:
-                    LogText = "Complete"
+                # if (PBF - LastPBF < Convergence and LastPBF < PBF and UnVaildExist != 1) and BestAdvL2 < 26:
+                if  BestAdvL2 < 26:
+                    LogText = "Complete GBL2: %.4f GBF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
                     print(LogText)
                     LogFile.write(LogText + '\n')
-                    render_frame(sess, GB, p, SClass, TClass, StartImg)
+                    render_frame(sess, BestAdv, p, SClass, TClass, StartImg)
                     break
                 if i == MaxEpoch-1 or ConstantUnVaildExist == 30:
-                    LogText = "Complete to MaxEpoch GBL2: %.4f GBF: %.4f"%(BestAdvL2,BestAdvF)
+                    LogText = "Complete to MaxEpoch GBL2: %.4f GBF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
                     print(LogText)
                     LogFile.write(LogText + '\n')
                     render_frame(sess, BestAdv, p, SClass, TClass, StartImg)
