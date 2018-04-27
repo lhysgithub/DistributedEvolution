@@ -26,8 +26,8 @@ InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
 TargetIndex = 1
-INumber = 50                # 染色体个数 / 个体个数
-BatchSize = 50              # 寻找可用个体时用的批量上限
+INumber = 70                # 染色体个数 / 个体个数
+BatchSize = 70              # 寻找可用个体时用的批量上限
 NumClasses = 1000           # 标签种类
 MaxEpoch = 10000            # 迭代上限
 Reserve = 0.25               # 保留率 = 父子保留的精英量 / BestNumber
@@ -36,7 +36,7 @@ IndividualShape = (INumber,299,299,3)
 Directions = 299*299*3
 ImageShape = (299,299,3)
 Sigma = 1
-TopK = 20
+TopK = 5
 Domin = 0.5
 StartStdDeviation = 0.1
 CloseEVectorWeight = 0.3
@@ -245,6 +245,7 @@ def main():
             Retry = 0
             Closed = 0          # 用来标记是否进行靠近操作
             Scaling = 0
+            CloseThreshold = -1
             for i in range(MaxEpoch):
                 Start = time.time()
 
@@ -389,7 +390,7 @@ def main():
 
                 # elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
                 elif PBF - LastPBF < Convergence and LastPBF < PBF :
-                    if (PBL2Distance + PBF > -0.5):# 靠近
+                    if (PBL2Distance + PBF > CloseThreshold):# 靠近
                         Closed = 1
                         Retry = 0
                         Scaling = 0
@@ -408,14 +409,14 @@ def main():
                         LogText = "Scaling up CEV: %.3f CDV: %.3f" % (CEV, CDV)
                         LogFile.write(LogText + '\n')
                         print(LogText)
-                elif (Retry == 0 and Closed == 0 and Scaling == 0) and LastPBL2 - LastPBF < PBL2Distance - PBF:# 反而找到了不好的解
-                    # Shaked = 1
-                    DNP = LastDNP
-                    ENP = LastENP
-                    # LogText = "Shaked CEV: %.3f CDV: %.3f ConstantShaked: %2d" % (CEV, CDV,ConstantShaked)
-                    LogText = "Shaked"
-                    LogFile.write(LogText + '\n')
-                    print(LogText)
+                # elif (Retry == 0 and Closed == 0 and Scaling == 0) and LastPBL2 - LastPBF < PBL2Distance - PBF:# 反而找到了不好的解
+                #     # Shaked = 1
+                #     DNP = LastDNP
+                #     ENP = LastENP
+                #     # LogText = "Shaked CEV: %.3f CDV: %.3f ConstantShaked: %2d" % (CEV, CDV,ConstantShaked)
+                #     LogText = "Shaked"
+                #     LogFile.write(LogText + '\n')
+                #     print(LogText)
                 else:
                     Scaling = 0
                     Closed = 0
@@ -427,12 +428,14 @@ def main():
                 else:
                     ConstantUnVaildExist =0
 
-                if PBL2Distance + PBF > -0.5:
+                if PBL2Distance + PBF > CloseThreshold:
                     BestAdv = PB
                     BestAdvL2 = PBL2Distance
                     BestAdvF = PBF
 
-                if  BestAdvL2 < 26:
+                if PBL2Distance < 26:
+                    CloseThreshold = - 0.5
+                if  BestAdvL2 < 26 and BestAdvL2 + BestAdvF > -0.5:
                     LogText = "Complete BestAdvL2: %.4f BestAdvF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
                     print(LogText)
                     LogFile.write(LogText + '\n')
