@@ -191,6 +191,7 @@ def main():
             upper = np.clip(TargetImg + real_eps, 0., 1.)
             prev_g = g
             l, g = get_grad(adv,InitImg,TargetImg,TargetClass,Labels)
+            num_queries += SAMPLES_PER_DRAW
 
             if l < 0.2:
                 real_eps = max(EPSILON, real_eps - epsilon_decay)
@@ -214,6 +215,7 @@ def main():
                     print("ANNEALING EPS DECAY")
                     adv = last_good_adv # start over with a smaller eps
                     l, g = get_grad(adv,InitImg,TargetImg,TargetClass,Labels)
+                    num_queries += SAMPLES_PER_DRAW
                     assert (l < 1)
                     epsilon_decay = max(epsilon_decay / 2, MIN_EPS_DECAY)
                 last_ls = []
@@ -234,10 +236,10 @@ def main():
                     current_lr = current_lr / 2
                     print('backtracking, lr = %.2E' % current_lr)
 
-            num_queries += SAMPLES_PER_DRAW
 
-            log_text = 'Step %05d: loss %.4f eps %.4f eps-decay %.4E lr %.2E (time %.4f)' % (i, l, \
-                    real_eps, epsilon_decay, current_lr, time.time() - start)
+
+            log_text = 'Step %05d: loss %.4f eps %.4f eps-decay %.4E lr %.2E (time %.4f) num_queries: %d' % (i, l, \
+                    real_eps, epsilon_decay, current_lr, time.time() - start,num_queries)
             log_file.write(log_text + '\n')
             print(log_text)
 
