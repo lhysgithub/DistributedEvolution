@@ -26,8 +26,8 @@ InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
 TargetIndex = 1
-INumber = 70                # 染色体个数 / 个体个数
-BatchSize = 70              # 寻找可用个体时用的批量上限
+INumber = 50                # 染色体个数 / 个体个数
+BatchSize = 50              # 寻找可用个体时用的批量上限
 NumClasses = 1000           # 标签种类
 MaxEpoch = 10000            # 迭代上限
 Reserve = 0.25               # 保留率 = 父子保留的精英量 / BestNumber
@@ -185,7 +185,7 @@ def main():
             y = y[0]
             return x, y
 
-        for p in range(2,100):
+        for p in range(5,100):
             # if p == 0:
             #     p = 5
 
@@ -245,7 +245,7 @@ def main():
             Retry = 0
             Closed = 0          # 用来标记是否进行靠近操作
             Scaling = 0
-            CloseThreshold = -1
+            CloseThreshold = -0.5
             for i in range(MaxEpoch):
                 Start = time.time()
 
@@ -276,7 +276,7 @@ def main():
                             if count == INumber:
                                 break
                     if count!= INumber :
-                        LogText = "count: %3d SSD: %.2f DM: %.3f"%(count,SSD,DM)
+                        LogText = "count: %3d SSD: %.2f DM: %.3f p: %d"%(count,SSD,DM,p)
                         LogFile.write(LogText + '\n')
                         print(LogText)
 
@@ -302,9 +302,9 @@ def main():
 
                         if Times == TimesUper :
                             SSD += 0.01
-                            if SSD - StartStdDeviation >= StartStdDeviation/2:
+                            if SSD - StartStdDeviation >= 0.05:
                                 SSD = StartStdDeviation
-                                DM -= StartStdDeviation/2
+                                DM -= 0.05
                                 StartImg = StartPoint(sess, SImg, TImg, TargetClass,DM)
                                 Upper = 1.0 - StartImg
                                 Downer = 0.0 - StartImg
@@ -433,9 +433,9 @@ def main():
                     BestAdvL2 = PBL2Distance
                     BestAdvF = PBF
 
-                if PBL2Distance < 26:
-                    CloseThreshold = - 0.5
-                if  BestAdvL2 < 26 and BestAdvL2 + BestAdvF > -0.5:
+                # if PBL2Distance < 26:
+                #     CloseThreshold = - 0.5
+                if  BestAdvL2 < 26 and BestAdvL2 + BestAdvF > CloseThreshold:
                     LogText = "Complete BestAdvL2: %.4f BestAdvF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
                     print(LogText)
                     LogFile.write(LogText + '\n')
