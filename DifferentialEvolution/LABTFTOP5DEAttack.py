@@ -20,18 +20,18 @@ import time
 import scipy
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
 TargetIndex = 1
-INumber = 50                # 染色体个数 / 个体个数
-BatchSize = 50              # 寻找可用个体时用的批量上限
-NumClasses = 1000           # 标签种类
-MaxEpoch = 10000            # 迭代上限
-Reserve = 0.25               # 保留率 = 父子保留的精英量 / BestNumber
-BestNmber = int(INumber*Reserve) # 优秀样本数量
+INumber = 50                       # 染色体个数 / 个体个数
+BatchSize = 50                     # 寻找可用个体时用的批量上限
+NumClasses = 1000                  # 标签种类
+MaxEpoch = 1000                    # 迭代上限
+Reserve = 0.25                     # 保留率 = 父子保留的精英量 / BestNumber
+BestNmber = int(INumber*Reserve)   # 优秀样本数量
 IndividualShape = (INumber,299,299,3)
 Directions = 299*299*3
 ImageShape = (299,299,3)
@@ -111,7 +111,7 @@ def main():
         # （INumber，1）还是（INumber） ？ 是（INumber）
         # reduction_indices 表示求和方向，并降维
         L2Distance = tf.sqrt(tf.reduce_sum(tf.square(NewImage - SourceImg),axis=(1,2,3)))
-        IndividualFitness = - (Sigma*tf.nn.softmax_cross_entropy_with_logits(logits=logit,labels=Labels)+ L2Distance)
+        IndividualFitness = - (Sigma*tf.nn.softmax_cross_entropy_with_logits(logits=logit,labels=Labels))
         # IndividualFitness = - (Sigma*(-tf.reduce_sum(Labels * tf.log(Confidence), 1))) # （INumber）
 
 
@@ -313,7 +313,7 @@ def main():
                             Times = 0
 
                     # 如果出现了样本无效化，回滚DNP,ENP
-                    if i>3 and count < StartNumber :
+                    if i!=0 and count < StartNumber :
                         CEV -= 0.01
                         CDV = CEV / 3
                         if CEV <= 0.01:
@@ -327,9 +327,9 @@ def main():
 
                     # 判断是否出现样本无效化
                     if cycletimes == 0:
-                        if i > 3 and count < StartNumber:
+                        if i != 3 and count < StartNumber:
                             UnVaildExist = 1
-                        elif i > 3 and count >= StartNumber:
+                        elif i != 3 and count >= StartNumber:
                             UnVaildExist = 0
                     cycletimes += 1
 
@@ -354,16 +354,13 @@ def main():
                 ENP,DNP,PBF,PB = sess.run([Expectation,StdDeviation,PbestFitness,Pbest],
                                           feed_dict={Individual: initI,logit:initCp,SourceImg:SImg,SourceClass:SClass,
                                                      TargetImg:TImg,TargetClass:TClass,Labels:LBS,StImg:StartImg})
-                if PBF > GBF:
-                    GB = PB
-                    GBF = PBF
 
-                if GB.shape[0] > 1:
-                    GB = GB[0]
-                    GB = np.reshape(GB, (1, 299, 299, 3))
-                    # DNP += CDV
-                    # ENP += (SImg - (StartImg + ENP)) * CEV
-                    print("GBConvergence")
+                # if GB.shape[0] > 1:
+                #     GB = GB[0]
+                #     GB = np.reshape(GB, (1, 299, 299, 3))
+                #     # DNP += CDV
+                #     # ENP += (SImg - (StartImg + ENP)) * CEV
+                #     print("GBConvergence")
 
                 if PB.shape[0] > 1:
                     PB = PB[0]
@@ -376,6 +373,10 @@ def main():
                 GBL2Distance = np.sqrt(np.sum(np.square(StartImg + GB - SImg), axis=(1, 2, 3)))
                 LastPBL2 = PBL2Distance
                 PBL2Distance = np.sqrt(np.sum(np.square(StartImg + PB - SImg), axis=(1, 2, 3)))
+
+                if PBF > CloseThreshold and PBL2Distance < GBL2Distance:
+                    GB = PB
+                    GBF = PBF
 
                 LogText = "Step %05d: GBF: %.4f PBF: %.4f UseingTime: %.4f PBL2Distance: %.4f GBL2Distance: %.4f QueryTimes: %d" % (
                 i, GBF, PBF, End - Start, PBL2Distance,GBL2Distance,QueryTimes)
@@ -390,7 +391,7 @@ def main():
 
                 # elif i>10 and LastPBF > PBF: # 发生抖动陷入局部最优(不应该以是否发生抖动来判断参数，而是应该以是否发现出现无效数据来判断，或者两者共同判断)
                 elif PBF - LastPBF < Convergence and LastPBF < PBF :
-                    if (PBL2Distance + PBF > CloseThreshold):# 靠近
+                    if ( PBF > CloseThreshold):# 靠近
                         Closed = 1
                         Retry = 0
                         Scaling = 0
@@ -428,14 +429,14 @@ def main():
                 else:
                     ConstantUnVaildExist =0
 
-                if PBL2Distance + PBF > CloseThreshold:
+                if PBF > CloseThreshold:
                     BestAdv = PB
                     BestAdvL2 = PBL2Distance
                     BestAdvF = PBF
 
                 # if PBL2Distance < 26:
                 #     CloseThreshold = - 0.5
-                if  BestAdvL2 < 26 and BestAdvL2 + BestAdvF > CloseThreshold:
+                if  BestAdvL2 < 26 and  BestAdvF > CloseThreshold:
                     LogText = "Complete BestAdvL2: %.4f BestAdvF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
                     print(LogText)
                     LogFile.write(LogText + '\n')
