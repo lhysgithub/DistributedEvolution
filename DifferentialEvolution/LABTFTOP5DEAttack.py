@@ -434,7 +434,7 @@ def main():
                     BestAdvL2 = PBL2Distance
                     BestAdvF = PBF
 
-
+					
                 if PBL2Distance < 26:
                     CloseThreshold = - 0.5
                 if  BestAdvL2 < 26 and BestAdvL2 + BestAdvF > -0.5:
