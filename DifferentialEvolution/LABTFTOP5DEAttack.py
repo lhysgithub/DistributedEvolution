@@ -26,21 +26,12 @@ InputDir = "adv_samples/"
 OutDir = "adv_example/"
 SourceIndex = 0
 TargetIndex = 1
-<<<<<<< HEAD
-INumber = 50                       # 染色体个数 / 个体个数
-BatchSize = 50                     # 寻找可用个体时用的批量上限
-NumClasses = 1000                  # 标签种类
-MaxEpoch = 1000                    # 迭代上限
-Reserve = 0.25                     # 保留率 = 父子保留的精英量 / BestNumber
-BestNmber = int(INumber*Reserve)   # 优秀样本数量
-=======
 INumber = 70                # 染色体个数 / 个体个数
 BatchSize = 70              # 寻找可用个体时用的批量上限
 NumClasses = 1000           # 标签种类
 MaxEpoch = 10000            # 迭代上限
 Reserve = 0.25               # 保留率 = 父子保留的精英量 / BestNumber
 BestNmber = int(INumber*Reserve) # 优秀样本数量
->>>>>>> parent of e1a2b52... 实验用程序
 IndividualShape = (INumber,299,299,3)
 Directions = 299*299*3
 ImageShape = (299,299,3)
@@ -443,15 +434,10 @@ def main():
                     BestAdvL2 = PBL2Distance
                     BestAdvF = PBF
 
-<<<<<<< HEAD
-                # if PBL2Distance < 26:
-                #     CloseThreshold = - 0.5
-                if  BestAdvL2 < 26 and  BestAdvF > CloseThreshold:
-=======
+
                 if PBL2Distance < 26:
                     CloseThreshold = - 0.5
                 if  BestAdvL2 < 26 and BestAdvL2 + BestAdvF > -0.5:
->>>>>>> parent of e1a2b52... 实验用程序
                     LogText = "Complete BestAdvL2: %.4f BestAdvF: %.4f QueryTimes: %d"%(BestAdvL2,BestAdvF,QueryTimes)
                     print(LogText)
                     LogFile.write(LogText + '\n')
