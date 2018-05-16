@@ -18,13 +18,13 @@ def get_image(indextemp=-1):
     return mpimg.imread(path)
 
 # fig = plt.figure(figsize=(10, 1.8))
-fig = plt.figure()
-gs = gridspec.GridSpec(10, 10)
+fig = plt.figure(figsize=(100, 100))
+gs = gridspec.GridSpec(10, 10,wspace=0.0, hspace=0.0)
 for i in range(100):
     if i//10 == i%10:
         image = get_image(i//10)
     else:
-        image = mpimg.imread('%d.jpg'%i)
+        image = mpimg.imread('%d.png'%i)
     ax = fig.add_subplot(gs[i//10, i%10])
     ax.imshow(image)
     ax.set_xticks([])
