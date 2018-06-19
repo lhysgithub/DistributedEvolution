@@ -1,8 +1,7 @@
-# 本程序为差分进化算法实现攻击的demo
-# 问题：
-# 1. 原始图片都不能正常识别
-# 2. 生成10^7个随机数，耗时过长
-# in this version, we meet some trouble
+# this is the demo of our adversarial-examples generator based on CMA-ES.
+# Author: Hongyi Liu
+# Email: 1084455812@qq.com
+
 import PIL
 from PIL import Image
 from inception_v3_imagenet import model, SIZE
